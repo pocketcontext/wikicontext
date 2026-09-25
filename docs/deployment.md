@@ -1,8 +1,8 @@
-# Deployment preparation
+# Deployment procedures
 
-Deployment is authorized for `wiki.pocketcontext.com`, using
-`ghcr.io/pocketcontext/wikicontext`. Provisioning and live verification are separate
-from the preparation documented here; this document does not assert they passed.
+WikiContext is deployed at `wiki.pocketcontext.com`, using the public image
+`ghcr.io/pocketcontext/wikicontext`. See [the release record](../DEPLOYMENT.md) for
+source/digests, completed checks and remaining browser verification.
 Fixed-target bootstrap, installer and update wrappers are enabled for that hostname.
 CI builds and exercises containers natively on AMD64 and ARM64. Publication on main
 requires both architecture checks (configuration, smoke and complete restore) and
