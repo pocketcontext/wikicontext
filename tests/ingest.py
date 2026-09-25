@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/wikicontext/scripts'))
@@ -14,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/wikicontext
 spec = importlib.util.spec_from_file_location('ingestion', Path(sys.path[0]) / 'ingest.py')
 ingest = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ingest)
+UPLOAD_SOURCE = ingest.upload_source
 
 
 class EvidenceStore:
@@ -123,6 +125,15 @@ class IngestionTests(unittest.TestCase):
         with self.assertRaises(ingest.wc.Fail):
             ingest.ingest(self.cfg, path)
         self.assertFalse(self.store.tables['sources'])
+
+    def test_original_upload_identifies_client(self):
+        # Edge proxies reject Python's default urllib signature.
+        response = unittest.mock.MagicMock()
+        response.__enter__.return_value.read.return_value = b'{"id":"source00000000001"}'
+        with patch.object(ingest.wc, 'must'), patch.object(ingest.wc, 'load_session', return_value={'token': 'synthetic-token'}), \
+                patch.object(ingest.wc.opener, 'open', return_value=response) as request:
+            UPLOAD_SOURCE(self.cfg, self.source('note.md', b'fixture'), b'fixture', 'a' * 64, 'Note')
+        self.assertEqual(request.call_args.args[0].get_header('User-agent'), ingest.wc.USER_AGENT)
 
     def test_missing_groq_key_no_provider_request(self):
         with patch.dict(os.environ, {}, clear=True), patch.object(ingest.wc.opener, 'open') as request:

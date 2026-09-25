@@ -52,7 +52,8 @@ def upload_source(cfg, path, content, digest, title):
     suffix = path.suffix.lower() if path.suffix.lower().lstrip('.').isalnum() else '.bin'
     body, media = multipart(fields, 'original', digest + suffix, content)
     request = urllib.request.Request(cfg['url'] + wc.records('sources'), data=body,
-                                    headers={'Authorization': session['token'], 'Content-Type': media}, method='POST')
+                                    headers={'Authorization': session['token'], 'Content-Type': media,
+                                             'User-Agent': wc.USER_AGENT}, method='POST')
     try:
         with wc.opener.open(request, timeout=180) as response:
             return json.load(response)
