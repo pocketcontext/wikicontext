@@ -18,8 +18,8 @@ class BootstrapTests(unittest.TestCase):
         self.credential = {'username': 'synthetic', 'token': 'header.payload-with_dash.signature_' + 'x' * 40}
 
     def test_unconfigured_bootstrap_never_mutates(self):
-        self.assertFalse(bootstrap.DEPLOYMENT_CONFIGURED)
-        with patch.object(bootstrap, 'run') as run:
+        self.assertTrue(bootstrap.DEPLOYMENT_CONFIGURED)
+        with patch.object(bootstrap, 'DEPLOYMENT_CONFIGURED', False), patch.object(bootstrap, 'run') as run:
             with self.assertRaisesRegex(RuntimeError, 'not configured or approved'):
                 bootstrap.main()
             run.assert_not_called()

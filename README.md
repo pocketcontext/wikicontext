@@ -64,7 +64,7 @@ python3 tests/bootstrap.py
 python3 tests/deploy_workflow.py
 ```
 
-Regenerate the SQL reference only after reviewing intentional changes: `tests/skill.py --binary ... --write-schema`. Container CI additionally runs configuration, persistence, crash restore and graceful shutdown checks. Images are not published or deployed by these workflows. A real Google browser login, live Groq transcription and container checks remain separate from local synthetic acceptance.
+Regenerate the SQL reference only after reviewing intentional changes: `tests/skill.py --binary ... --write-schema`. Container CI additionally runs configuration, persistence, crash restore and graceful shutdown checks. Main-branch image publication is gated on application tests and native container checks; deployment additionally requires the configured `COLORS_PROFILE` environment. A real Google browser login, live Groq transcription and container checks remain separate from local synthetic acceptance.
 
 ## Existing wiki migration
 

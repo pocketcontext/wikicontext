@@ -53,8 +53,8 @@ class DeploymentTests(unittest.TestCase):
 
     def test_unconfigured_entrypoints_never_mutate(self):
         for module in (hook, installer):
-            self.assertFalse(module.DEPLOYMENT_CONFIGURED)
-            with patch.object(module.subprocess, "run") as run:
+            self.assertTrue(module.DEPLOYMENT_CONFIGURED)
+            with patch.object(module, "DEPLOYMENT_CONFIGURED", False), patch.object(module.subprocess, "run") as run:
                 with self.assertRaisesRegex(RuntimeError, "not configured or approved"):
                     module.main()
                 run.assert_not_called()

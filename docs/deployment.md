@@ -1,11 +1,14 @@
 # Deployment preparation
 
-WikiContext is not deployed. The proposed hostname is `wiki.pocketcontext.com` and
-image repository is `ghcr.io/pocketcontext/wikicontext`; neither is provisioned here.
-The workflows validate code and containers only: they do not publish images or deploy.
-The fixed-target bootstrap, installer and update wrapper refuse execution while
-`DEPLOYMENT_CONFIGURED = False`. Approve the hostname and infrastructure separately,
-then review those constants together before enabling deployment.
+Deployment is authorized for `wiki.pocketcontext.com`, using
+`ghcr.io/pocketcontext/wikicontext`. Provisioning and live verification are separate
+from the preparation documented here; this document does not assert they passed.
+Fixed-target bootstrap, installer and update wrappers are enabled for that hostname.
+CI builds and exercises containers natively on AMD64 and ARM64. Publication on main
+requires both architecture checks (configuration, smoke and complete restore) and
+the full application test suite on both architectures. Release archive access follows
+repository visibility; registry package visibility is configured independently.
+CD runs only when `COLORS_PROFILE` names the configured GitHub deployment environment.
 
 The container exposes HTTP port 80 and `/up`; mount persistent `/storage`.
 It builds the commit in `POCKETCONTEXT_VERSION` with CGO. The pinned Go/base images
@@ -39,8 +42,7 @@ Use a dedicated private R2 bucket `wikicontext-backup` and prefix
 `LITESTREAM_PATH`, `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY`, with
 `LITESTREAM_REGION` and `LITESTREAM_ENDPOINT` for R2. Never reuse sibling replicas.
 Store deployment credentials under `COLORS_PAR_APP_WIKICONTEXT_*` in the private
-scaffold `.envrc.private`, preserving existing entries. No credentials or scaffold
-entries were created by this preparation. Groq transcription credentials belong to
+scaffold `.envrc.private`, preserving existing entries. Groq transcription credentials belong to
 the ingestion agent environment, not container deployment labels.
 
 The image enables `WIKICONTEXT_RATE_LIMITS=true`. An explicitly isolated development
@@ -81,7 +83,7 @@ python3 tests/deploy_workflow.py
 
 ## Updates
 
-Disable ONCE automatic updates. After explicit infrastructure approval, install the
+Disable ONCE automatic updates. Install the
 root-owned fixed-target wrapper with `deploy/install.py`, preserving sibling SSH
 keys. The wrapper locks, verifies the exact existing application/image, pulls,
 gracefully stops the sole writer, and updates that target. It refuses forced-stop
@@ -96,4 +98,4 @@ initial deployment.
 Container, Litestream, immutable-file backup, smoke/MinIO fixture, bootstrap and
 single-writer deployment patterns were adapted from sibling AccountContext.
 WikiContext changes the protected attachment collection to `sources`, tests shared
-user visibility, and leaves operational deployment explicitly disabled.
+user visibility, and restricts operational deployment to its approved fixed target.

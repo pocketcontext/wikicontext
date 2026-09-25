@@ -35,7 +35,7 @@ def atomic_write(path, data, mode, uid=0, gid=0):
             os.unlink(name)
 
 
-DEPLOYMENT_CONFIGURED = False  # Enable only after the deployment target is approved.
+DEPLOYMENT_CONFIGURED = True  # Authorized fixed target: wiki.pocketcontext.com.
 
 
 def main():

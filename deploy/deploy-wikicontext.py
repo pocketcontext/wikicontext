@@ -105,7 +105,7 @@ def deploy():
         raise
 
 
-DEPLOYMENT_CONFIGURED = False  # Enable only after the deployment target is approved.
+DEPLOYMENT_CONFIGURED = True  # Authorized fixed target: wiki.pocketcontext.com.
 
 
 def main():
