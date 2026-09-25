@@ -1,0 +1,129 @@
+{
+  "authCollection": "users",
+  "tables": {
+    "sources": [
+      "id",
+      "title",
+      "original_name",
+      "media_type",
+      "source_date",
+      "sha256",
+      "supersedes",
+      "original",
+      "created_by",
+      "updated_by",
+      "revision",
+      "created",
+      "updated"
+    ],
+    "renditions": [
+      "id",
+      "source",
+      "kind",
+      "processor",
+      "version_label",
+      "notes",
+      "created_by",
+      "updated_by",
+      "revision",
+      "created",
+      "updated"
+    ],
+    "passages": [
+      "id",
+      "rendition",
+      "ordinal",
+      "locator",
+      "body",
+      "created_by",
+      "updated_by",
+      "revision",
+      "created",
+      "updated"
+    ],
+    "ingestion_runs": [
+      "id",
+      "key",
+      "status",
+      "description",
+      "sources",
+      "issue",
+      "created_by",
+      "updated_by",
+      "revision",
+      "created",
+      "updated"
+    ],
+    "pages": [
+      "id",
+      "slug",
+      "kind",
+      "created_by",
+      "updated_by",
+      "revision",
+      "created",
+      "updated"
+    ],
+    "page_revisions": [
+      "id",
+      "run",
+      "page",
+      "base_revision",
+      "title",
+      "summary",
+      "body",
+      "archived",
+      "created_by",
+      "updated_by",
+      "revision",
+      "created",
+      "updated"
+    ],
+    "citations": [
+      "id",
+      "page_revision",
+      "passage",
+      "marker",
+      "note",
+      "created_by",
+      "updated_by",
+      "revision",
+      "created",
+      "updated"
+    ],
+    "page_links": [
+      "id",
+      "page_revision",
+      "target",
+      "created_by",
+      "updated_by",
+      "revision",
+      "created",
+      "updated"
+    ],
+    "user_directory": [
+      "id",
+      "name"
+    ],
+    "publications": [
+      "id",
+      "run",
+      "sequence",
+      "manifest",
+      "created"
+    ],
+    "audit_log": [
+      "id",
+      "action",
+      "collection",
+      "record",
+      "actor",
+      "actor_type",
+      "changes",
+      "created"
+    ]
+  },
+  "timeoutMs": 2000,
+  "maxRows": 500,
+  "maxBytes": 1048576
+}

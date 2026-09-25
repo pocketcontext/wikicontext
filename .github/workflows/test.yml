@@ -1,0 +1,66 @@
+name: Wiki integration
+on:
+  push:
+  pull_request:
+  # Reusable validation for a future explicitly enabled release workflow.
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: wikicontext
+          persist-credentials: false
+      - name: Test deployment orchestration
+        run: python3 wikicontext/tests/deploy_workflow.py
+      - name: Test complete evidence backups
+        run: python3 wikicontext/tests/backup.py
+      - name: Test initial deployment orchestration
+        run: python3 wikicontext/tests/bootstrap.py
+      - name: Read server revision
+        id: server
+        shell: bash
+        run: |
+          revision=$(cat wikicontext/POCKETCONTEXT_VERSION)
+          [[ "$revision" =~ ^[0-9a-f]{40}$ ]]
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: pocketcontext/pocketcontext
+          ref: ${{ steps.server.outputs.revision }}
+          path: pocketcontext
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: pocketcontext/go.mod
+          cache-dependency-path: pocketcontext/go.sum
+      - name: Build server
+        working-directory: pocketcontext
+        # The flags of pocketcontext's Makefile.
+        run: CGO_ENABLED=1 go build -tags sqlite_math_functions -o bin/pocketcontext ./cmd/pocketcontext
+      - name: Test wiki
+        run: python3 wikicontext/tests/integration.py --binary pocketcontext/bin/pocketcontext
+      - name: Test Google OAuth claims and Workspace signup
+        run: python3 wikicontext/tests/oauth_integration.py --binary pocketcontext/bin/pocketcontext
+      - name: Test complete live evidence recovery
+        run: python3 wikicontext/tests/backup_integration.py --binary pocketcontext/bin/pocketcontext
+      - name: Test first-start deployment settings
+        run: python3 wikicontext/tests/deploy.py --binary pocketcontext/bin/pocketcontext
+      - name: Test installable skill
+        run: python3 wikicontext/tests/skill.py --binary pocketcontext/bin/pocketcontext
+      - name: Test access, publication and evidence workflows
+        run: |
+          python3 wikicontext/tests/auth.py --binary pocketcontext/bin/pocketcontext
+          python3 wikicontext/tests/realtime_access.py --binary pocketcontext/bin/pocketcontext
+          python3 wikicontext/tests/publication_review.py --binary pocketcontext/bin/pocketcontext
+          python3 wikicontext/tests/ingest_integration.py --binary pocketcontext/bin/pocketcontext
+          python3 wikicontext/tests/export_integration.py --binary pocketcontext/bin/pocketcontext
+      - name: Test clients, exports and deployment preparation
+        run: |
+          python3 wikicontext/tests/oauth.py
+          python3 wikicontext/tests/client.py
+          python3 wikicontext/tests/ingest.py
+          python3 wikicontext/tests/exporter.py

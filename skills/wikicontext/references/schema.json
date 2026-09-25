@@ -1,0 +1,461 @@
+{
+  "limits": {
+    "timeoutMs": 2000,
+    "maxRows": 500,
+    "maxBytes": 1048576
+  },
+  "tables": [
+    {
+      "name": "audit_log",
+      "columns": [
+        {
+          "name": "action",
+          "type": "TEXT"
+        },
+        {
+          "name": "actor",
+          "type": "TEXT"
+        },
+        {
+          "name": "actor_type",
+          "type": "TEXT"
+        },
+        {
+          "name": "changes",
+          "type": "JSON"
+        },
+        {
+          "name": "collection",
+          "type": "TEXT"
+        },
+        {
+          "name": "created",
+          "type": "TEXT"
+        },
+        {
+          "name": "id",
+          "type": "TEXT"
+        },
+        {
+          "name": "record",
+          "type": "TEXT"
+        }
+      ]
+    },
+    {
+      "name": "citations",
+      "columns": [
+        {
+          "name": "created",
+          "type": "TEXT"
+        },
+        {
+          "name": "created_by",
+          "type": "TEXT"
+        },
+        {
+          "name": "id",
+          "type": "TEXT"
+        },
+        {
+          "name": "marker",
+          "type": "TEXT"
+        },
+        {
+          "name": "note",
+          "type": "TEXT"
+        },
+        {
+          "name": "page_revision",
+          "type": "TEXT"
+        },
+        {
+          "name": "passage",
+          "type": "TEXT"
+        },
+        {
+          "name": "revision",
+          "type": "NUMERIC"
+        },
+        {
+          "name": "updated",
+          "type": "TEXT"
+        },
+        {
+          "name": "updated_by",
+          "type": "TEXT"
+        }
+      ]
+    },
+    {
+      "name": "ingestion_runs",
+      "columns": [
+        {
+          "name": "created",
+          "type": "TEXT"
+        },
+        {
+          "name": "created_by",
+          "type": "TEXT"
+        },
+        {
+          "name": "description",
+          "type": "TEXT"
+        },
+        {
+          "name": "id",
+          "type": "TEXT"
+        },
+        {
+          "name": "issue",
+          "type": "TEXT"
+        },
+        {
+          "name": "key",
+          "type": "TEXT"
+        },
+        {
+          "name": "revision",
+          "type": "NUMERIC"
+        },
+        {
+          "name": "sources",
+          "type": "JSON"
+        },
+        {
+          "name": "status",
+          "type": "TEXT"
+        },
+        {
+          "name": "updated",
+          "type": "TEXT"
+        },
+        {
+          "name": "updated_by",
+          "type": "TEXT"
+        }
+      ]
+    },
+    {
+      "name": "page_links",
+      "columns": [
+        {
+          "name": "created",
+          "type": "TEXT"
+        },
+        {
+          "name": "created_by",
+          "type": "TEXT"
+        },
+        {
+          "name": "id",
+          "type": "TEXT"
+        },
+        {
+          "name": "page_revision",
+          "type": "TEXT"
+        },
+        {
+          "name": "revision",
+          "type": "NUMERIC"
+        },
+        {
+          "name": "target",
+          "type": "TEXT"
+        },
+        {
+          "name": "updated",
+          "type": "TEXT"
+        },
+        {
+          "name": "updated_by",
+          "type": "TEXT"
+        }
+      ]
+    },
+    {
+      "name": "page_revisions",
+      "columns": [
+        {
+          "name": "archived",
+          "type": "BOOLEAN"
+        },
+        {
+          "name": "base_revision",
+          "type": "TEXT"
+        },
+        {
+          "name": "body",
+          "type": "TEXT"
+        },
+        {
+          "name": "created",
+          "type": "TEXT"
+        },
+        {
+          "name": "created_by",
+          "type": "TEXT"
+        },
+        {
+          "name": "id",
+          "type": "TEXT"
+        },
+        {
+          "name": "page",
+          "type": "TEXT"
+        },
+        {
+          "name": "revision",
+          "type": "NUMERIC"
+        },
+        {
+          "name": "run",
+          "type": "TEXT"
+        },
+        {
+          "name": "summary",
+          "type": "TEXT"
+        },
+        {
+          "name": "title",
+          "type": "TEXT"
+        },
+        {
+          "name": "updated",
+          "type": "TEXT"
+        },
+        {
+          "name": "updated_by",
+          "type": "TEXT"
+        }
+      ]
+    },
+    {
+      "name": "pages",
+      "columns": [
+        {
+          "name": "created",
+          "type": "TEXT"
+        },
+        {
+          "name": "created_by",
+          "type": "TEXT"
+        },
+        {
+          "name": "id",
+          "type": "TEXT"
+        },
+        {
+          "name": "kind",
+          "type": "TEXT"
+        },
+        {
+          "name": "revision",
+          "type": "NUMERIC"
+        },
+        {
+          "name": "slug",
+          "type": "TEXT"
+        },
+        {
+          "name": "updated",
+          "type": "TEXT"
+        },
+        {
+          "name": "updated_by",
+          "type": "TEXT"
+        }
+      ]
+    },
+    {
+      "name": "passages",
+      "columns": [
+        {
+          "name": "body",
+          "type": "TEXT"
+        },
+        {
+          "name": "created",
+          "type": "TEXT"
+        },
+        {
+          "name": "created_by",
+          "type": "TEXT"
+        },
+        {
+          "name": "id",
+          "type": "TEXT"
+        },
+        {
+          "name": "locator",
+          "type": "TEXT"
+        },
+        {
+          "name": "ordinal",
+          "type": "NUMERIC"
+        },
+        {
+          "name": "rendition",
+          "type": "TEXT"
+        },
+        {
+          "name": "revision",
+          "type": "NUMERIC"
+        },
+        {
+          "name": "updated",
+          "type": "TEXT"
+        },
+        {
+          "name": "updated_by",
+          "type": "TEXT"
+        }
+      ]
+    },
+    {
+      "name": "publications",
+      "columns": [
+        {
+          "name": "created",
+          "type": "TEXT"
+        },
+        {
+          "name": "id",
+          "type": "TEXT"
+        },
+        {
+          "name": "manifest",
+          "type": "JSON"
+        },
+        {
+          "name": "run",
+          "type": "TEXT"
+        },
+        {
+          "name": "sequence",
+          "type": "NUMERIC"
+        }
+      ]
+    },
+    {
+      "name": "renditions",
+      "columns": [
+        {
+          "name": "created",
+          "type": "TEXT"
+        },
+        {
+          "name": "created_by",
+          "type": "TEXT"
+        },
+        {
+          "name": "id",
+          "type": "TEXT"
+        },
+        {
+          "name": "kind",
+          "type": "TEXT"
+        },
+        {
+          "name": "notes",
+          "type": "TEXT"
+        },
+        {
+          "name": "processor",
+          "type": "TEXT"
+        },
+        {
+          "name": "revision",
+          "type": "NUMERIC"
+        },
+        {
+          "name": "source",
+          "type": "TEXT"
+        },
+        {
+          "name": "updated",
+          "type": "TEXT"
+        },
+        {
+          "name": "updated_by",
+          "type": "TEXT"
+        },
+        {
+          "name": "version_label",
+          "type": "TEXT"
+        }
+      ]
+    },
+    {
+      "name": "sources",
+      "columns": [
+        {
+          "name": "created",
+          "type": "TEXT"
+        },
+        {
+          "name": "created_by",
+          "type": "TEXT"
+        },
+        {
+          "name": "id",
+          "type": "TEXT"
+        },
+        {
+          "name": "media_type",
+          "type": "TEXT"
+        },
+        {
+          "name": "original",
+          "type": "TEXT"
+        },
+        {
+          "name": "original_name",
+          "type": "TEXT"
+        },
+        {
+          "name": "revision",
+          "type": "NUMERIC"
+        },
+        {
+          "name": "sha256",
+          "type": "TEXT"
+        },
+        {
+          "name": "source_date",
+          "type": "TEXT"
+        },
+        {
+          "name": "supersedes",
+          "type": "TEXT"
+        },
+        {
+          "name": "title",
+          "type": "TEXT"
+        },
+        {
+          "name": "updated",
+          "type": "TEXT"
+        },
+        {
+          "name": "updated_by",
+          "type": "TEXT"
+        }
+      ]
+    },
+    {
+      "name": "user_directory",
+      "columns": [
+        {
+          "name": "id",
+          "type": "TEXT"
+        },
+        {
+          "name": "name",
+          "type": "TEXT"
+        }
+      ]
+    }
+  ],
+  "permissionModel": "shared"
+}
