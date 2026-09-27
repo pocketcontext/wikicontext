@@ -1,5 +1,39 @@
 # WikiContext deployment
 
+## Live reader release
+
+The read-only browser reader is deployed at https://wiki.pocketcontext.com/.
+Released source: `ca55c6e0c7658a522f7a7a9af74568128a1726f3`.
+PocketContext remains pinned to `a92b0de5e1b66b6d3b6135b90092d2d6da5f7cc8`.
+The multiarchitecture image digest is
+`sha256:57ffa4d4d1d63175ddb0bb892dddc76ceed3b396f2d98204791116db8ff58055`.
+
+[Release CI](https://github.com/pocketcontext/wikicontext/actions/runs/36353967650)
+passed application, authentication, publication realtime, reader type/unit/browser,
+container smoke and complete recovery checks on AMD64 and ARM64 before publishing
+the image and deploying through the locked graceful-stop wrapper.
+[Source-pinned image archives](https://github.com/pocketcontext/wikicontext/releases/tag/image-ca55c6e0c7658a522f7a7a9af74568128a1726f3)
+are available with checksums. Local validation passed all 19 backend commands,
+18 frontend unit tests and the real-browser suite against synthetic isolated data.
+The browser suite covers publication updates, draft exclusion, pinned history,
+reconnect, protected original downloads, revoked sessions, hostile Markdown,
+keyboard focus and mobile layout.
+
+The pre-deployment backup `before-wiki-reader-20260927215636.zip` was created and
+its ZIP integrity and database entry verified. Post-deployment inspection confirmed
+the released revision and server pin, one writer, persistent storage, one CPU,
+512 MiB and disabled automatic updates. Every sibling container ID was preserved;
+all eight application health endpoints, the website and both demos returned 200.
+
+Production browser checks passed desktop/mobile login layout, keyboard access,
+CSP/no-store headers, anonymous SQL rejection, and byte-for-byte equality of
+served assets with the tested build. The initial Google authorization URL uses
+the registered callback and S256 PKCE. An interactive production Google login
+remains unverified; authenticated reading was exercised with synthetic identities
+in isolated browser tests. No production knowledge records were changed.
+
+## Initial release record
+
 Deployed on 25 September 2026 at https://wiki.pocketcontext.com through the existing ONCE host. The application starts empty; the prior Markdown wiki has not been migrated.
 
 | Item | Verified value |
