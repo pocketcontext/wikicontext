@@ -32,3 +32,7 @@ For questions, retrieve the latest publication manifest through SQL, then query 
 Generate Obsidian files from committed content with `wc.py export-obsidian DESTINATION`. Include original source attachments in `raw/`. Exported files remain readable after account revocation. The exporter detects local edits and maintains an ownership manifest; route intended corrections through WikiContext and regenerate.
 
 Report sources processed, pages published, publication sequence, unresolved contradictions/errors, and export destination when requested. Never print credentials or include protected file tokens in Markdown.
+
+## Optional performance tracing
+
+When the user requests tracing, follow [request tracing](references/tracing.md). Use the shared ObserveContext wrapper; SQL text requires separate explicit opt-in. Ordinary commands remain unchanged.
