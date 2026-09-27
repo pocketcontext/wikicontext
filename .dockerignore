@@ -8,3 +8,11 @@
 !docker/entrypoint.sh
 !docker/litestream.yml
 !docker/backup.py
+!ui/
+!ui/package.json
+!ui/pnpm-lock.yaml
+!ui/index.html
+!ui/tsconfig.json
+!ui/vite.config.ts
+!ui/src/
+!ui/src/**

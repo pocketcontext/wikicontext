@@ -284,6 +284,20 @@ def smoke(image, tmp, run_id):
     step('starting the image with the ONCE variables, LITESTREAM_DISABLED=true, a superuser, and a volume at /storage')
     run_app(image, name, volume, env)
     base = wait_up(name)
+    step('static reader and bundled assets are available with restrictive browser headers')
+    status, headers, html = http('GET', base + '/')
+    check(status == 200 and isinstance(html, str) and '<div id="root"' in html, 'reader shell is served')
+    check(headers.get('Cache-Control') == 'no-store', 'reader shell is never cached')
+    check("script-src 'self'" in headers.get('Content-Security-Policy', '') and
+          "frame-ancestors 'none'" in headers.get('Content-Security-Policy', ''), 'reader CSP is present')
+    assets = re.findall(r'(?:src|href)="(/assets/[^" ]+)"', html)
+    check(bool(assets), 'reader references bundled assets')
+    for asset in assets:
+        status, headers, body = http('GET', base + asset)
+        check(status == 200 and bool(body), 'reader asset loads: ' + asset)
+        check(headers.get('X-Content-Type-Options') == 'nosniff', 'asset MIME sniffing is disabled')
+    status, _, _ = http('GET', base + '/assets/not-a-real-file.js')
+    check(status == 404, 'missing assets do not return the reader shell')
     check(docker('exec', name, 'cat', '/proc/1/comm')[1].strip() == 'tini', 'PID 1 is tini')
 
     step('settings taken from the environment, read with the superuser token')

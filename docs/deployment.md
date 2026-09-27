@@ -11,6 +11,10 @@ repository visibility; registry package visibility is configured independently.
 CD runs only when `COLORS_PROFILE` names the configured GitHub deployment environment.
 
 The container exposes HTTP port 80 and `/up`; mount persistent `/storage`.
+The root URL serves the bundled read-only wiki reader. Its static assets are built
+in a separate Node stage; the runtime remains the existing Go/Python image. Keep
+the same Google OAuth redirect at the approved origin's `/api/oauth2-redirect`.
+No new hostname, OAuth client or cloud resources are required for the reader.
 It builds the commit in `POCKETCONTEXT_VERSION` with CGO. The pinned Go/base images
 and Litestream checksums are inherited from AccountContext. Container CI must build
 and verify them before any release. Run:

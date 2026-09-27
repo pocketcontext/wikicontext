@@ -26,6 +26,11 @@ The exporter pins one immutable publication, follows its immutable revisions and
 
 ## Recovery and scope
 
+The browser reader selects the same immutable publications as the exporter.
+Realtime events invalidate its view; authenticated SQL supplies content, and all
+page, citation and backlink reads remain pinned to one publication. Historical
+views stay pinned. Browser rendering never ingests Markdown or changes records.
+
 Complete backups include a consistent database snapshot and every immutable source original referenced by it, verified by hashes. Database-only replication cannot establish complete recovery. No direct SQLite business writes or migrations ingest knowledge. Tests use isolated synthetic data.
 
 Initial scope: text/Markdown/PDF/audio ingestion helpers, agent synthesis and question workflows, revisioned publication, citations and links, structural lint, deterministic Obsidian export, auth and recovery preparation. No automatic web crawling, background autonomous LLM service, native vector/FTS dependency, two-way Obsidian synchronization, external messaging, cloud provisioning or real-data migration is included in this local implementation.
