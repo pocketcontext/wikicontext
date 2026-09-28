@@ -14,6 +14,7 @@ Use `wc.py schema` for live SQL columns and `wc.py check` for differences from `
 | page_links | `page_revision`, `target` page identity. Immutable, unique pair. |
 | publications | Server-owned increasing `sequence`, `run`, immutable `manifest` mapping page IDs to published revision IDs, `created`. |
 | audit_log | Server-owned action, collection, record, actor/type, changes and timestamp. |
+| search_state | Server-maintained index generation. Read-only to users; ordinary record writes are rejected, including superusers. |
 | user_directory | Safe public user ID/name projection; auth records are excluded from SQL. |
 
 Writable records have server-managed `revision`, `created_by`, `updated_by`, `created`, `updated`; do not submit them. A run update requires `expected_revision` from a fresh read. Original attachments are uploaded as multipart form data through the records API; the normal JSON create command cannot upload file bytes.
@@ -21,3 +22,5 @@ Writable records have server-managed `revision`, `created_by`, `updated_by`, `cr
 Publishing changes the run status through the records API. In one transaction the server verifies page base revisions, citation markers, and links, creates a new manifest, closes the run and records history. HTTP 409 means reassess against the current publication in a new run. Failed publication exposes no partial published pages. Staging records remain visible to admitted users but are not published knowledge.
 
 Body markers use `[^1]`. Create corresponding citation records; do not embed footnote definitions in the body. The exporter renders definitions. Body `[[target-slug]]` links require page_links records. Link targets must be present and unarchived in the resulting publication. Uncited prose must explicitly contain `[needs verification]`; this structural allowance does not establish factual accuracy.
+
+The authenticated search endpoint is separate from SQL. Index `pages` takes a required publication ID as `scope`; manifest values select revisions before pagination. Its generation changes on publication and rebuild. FTS and shadow tables are never SQL-readable. Search results may be incomplete when `hasMore`/`truncated` is true; paginate using the same scope and generation.

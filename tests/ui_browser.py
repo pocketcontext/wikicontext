@@ -41,7 +41,7 @@ def seed(request):
         run = create('ingestion_runs', {'key': f'browser-{number}', 'status': 'staging', 'description': f'Browser publication {number}', 'sources': [source['id']]})
         revision = create('page_revisions', {'run': run['id'], 'page': observatory['id'], 'base_revision': state['revision'],
             'title': 'Observatory', 'summary': 'A synthetic place to study stars.',
-            'body': f'## Opening\n\nPublished edition {number}. The observatory opened in 2026.[^1]\n\nSee [[telescope|the telescope]].\n\n'
+            'body': f'## Opening\n\nPublished edition {number}. Editiontoken{number}. The observatory opened in 2026.[^1]\n\nSee [[telescope|the telescope]].\n\n'
                     '> [!NOTE] Reading note\n> These records are synthetic.\n\n'
                     '<script>window.wikiInjected = true</script>\n\n'
                     '<img src="https://invalid.example/tracker" onerror="window.wikiInjected = true">\n\n'
@@ -50,6 +50,11 @@ def seed(request):
         create('citations', {'page_revision': revision['id'], 'passage': passage['id'], 'marker': '1', 'note': 'Opening date.'})
         create('page_links', {'page_revision': revision['id'], 'target': telescope['id']})
         if number == 1:
+            for n in range(25):
+                item = create('pages', {'slug': f'starlight-{n:02d}', 'kind': 'concept'})
+                create('page_revisions', {'run': run['id'], 'page': item['id'], 'title': f'Starlight {n:02d}',
+                    'summary': 'Synthetic search fixture.',
+                    'body': f'Starlight telescope research note {n}. <img src=x onerror=window.wikiInjected=true> [needs verification]'})
             create('page_revisions', {'run': run['id'], 'page': telescope['id'], 'title': 'Telescope', 'summary': 'Synthetic instrument.', 'body': '## Lens\n\nAn instrument for observing stars. [needs verification]'})
         state['pending'] = (run, revision)
         return {'edition': number}
@@ -64,12 +69,15 @@ def seed(request):
 
     publish()
     def control(action):
+        nonlocal token
         if action == '/stage':
             return stage()
         if action == '/publish':
             return publish()
         if action in ('/disable', '/enable'):
             request('PATCH', '/api/collections/users/records/' + user['id'], {'disabled': action == '/disable'}, admin)
+            if action == '/enable':
+                token = request('POST', '/api/collections/users/auth-with-password', {'identity': 'agent@example.com', 'password': 'SyntheticUserPassword123!'})['token']
             return {'ok': True}
         raise ValueError('Unknown fixture action')
     return control

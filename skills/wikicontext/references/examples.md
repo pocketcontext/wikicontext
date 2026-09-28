@@ -39,3 +39,20 @@ LIMIT 10 OFFSET 0
 ```
 
 If an update returns HTTP 409, retrieve current published content, reassess changes and create a new run with new immutable revisions. Do not simply replace base_revision with the newest ID without reviewing its content.
+
+## Ranked published-page search
+
+```sh
+python3 scripts/wc.py search 'deployment safety' --limit 20
+python3 scripts/wc.py search 'deployment safety' --sequence 12 --limit 20
+# Copy publication, generation and nextOffset from the preceding response:
+python3 scripts/wc.py search 'deployment safety' --publication PUBLICATION_ID_ --generation RETURNED_GENERATION --offset 20 --limit 20
+```
+
+The IDs and generation above are placeholders. Use the same query and publication
+for continuation; the default returns only the first 20 matches. `pages` preserve
+relevance order and include revision ID, page ID, slug, kind, title, summary, score
+and plain excerpt. Lower scores rank first. Follow citations through the returned
+revision before treating a claim as evidence. Search HTTP 409 exits with code 4:
+discard previous result pages and restart without the old generation. A historical
+publication keeps its membership, but scores can change as the index grows.

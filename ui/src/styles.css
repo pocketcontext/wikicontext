@@ -298,7 +298,8 @@ select {
   scroll-behavior: smooth;
   outline: 0;
 }
-.reader article {
+.reader article,
+.search-view {
   max-width: 870px;
   padding: 58px 64px 30px;
   margin: 0 auto;
@@ -832,7 +833,8 @@ select {
   .context-panel {
     width: 270px;
   }
-  .reader article {
+  .reader article,
+  .search-view {
     padding-top: 75px;
   }
 }
@@ -840,7 +842,8 @@ select {
   .context-panel {
     display: none;
   }
-  .reader article {
+  .reader article,
+  .search-view {
     padding: 45px 45px 30px;
   }
   .sidebar {
@@ -883,7 +886,8 @@ select {
     max-width: 145px;
     font-size: 10px;
   }
-  .reader article {
+  .reader article,
+  .search-view {
     padding: 34px 24px 25px;
   }
   .page-title {
@@ -918,4 +922,44 @@ select {
   * {
     scroll-behavior: auto !important;
   }
+}
+
+[hidden] {
+  display: none !important;
+}
+.search-results {
+  list-style: none;
+  margin: 1.5rem 0;
+  padding: 0;
+}
+.search-results li {
+  padding: 1.4rem 0;
+  border-bottom: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+.search-results h2 {
+  margin: 0.5rem 0;
+  font-size: 1.3rem;
+}
+.search-results p {
+  white-space: pre-wrap;
+  line-height: 1.65;
+}
+.search-results a {
+  color: inherit;
+  text-underline-offset: 0.2em;
+}
+.search-status {
+  min-height: 1.5rem;
+}
+.search-error {
+  padding: 1rem 0;
+}
+.search-error button {
+  margin-left: 0.5rem;
+}
+.back-to-search {
+  display: inline-block;
+  margin-bottom: 1.5rem;
+  color: inherit;
 }

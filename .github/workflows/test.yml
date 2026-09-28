@@ -76,6 +76,7 @@ jobs:
           python3 wikicontext/tests/realtime_publication.py --binary pocketcontext/bin/pocketcontext
           python3 wikicontext/tests/publication_review.py --binary pocketcontext/bin/pocketcontext
           python3 wikicontext/tests/knowledge_integration.py --binary pocketcontext/bin/pocketcontext
+          python3 wikicontext/tests/search_integration.py --binary pocketcontext/bin/pocketcontext
           python3 wikicontext/tests/ingest_integration.py --binary pocketcontext/bin/pocketcontext
           python3 wikicontext/tests/export_integration.py --binary pocketcontext/bin/pocketcontext
       - name: Test clients, exports and deployment preparation

@@ -39,6 +39,7 @@ function publish(app,run){
  }
  if(Object.keys(manifest).length>10000)invalid('Publication page budget exceeded');
  const p=new Record(app.findCollectionByNameOrId('publications'));p.set('run',run.id);p.set('sequence',prior.length?prior[0].getInt('sequence')+1:1);p.set('manifest',manifest);app.save(p);
+ require(`${__hooks}/search.js`).publish(app,revisions);
 }
 function validate(app,r){
  const t=r.collection().name;

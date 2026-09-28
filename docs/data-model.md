@@ -20,7 +20,7 @@ All ordinary updates carry expected_revision. Other domain records are immutable
 
 ## Queries and export
 
-All knowledge retrieval uses authenticated /api/context/schema and /api/context/query, including exporter reads. Original file retrieval uses the protected PocketBase file API. SQL columns are explicitly allowlisted; users, credentials and SQLite metadata are excluded. Questions search published pages through the latest manifest, then source passages; drafts must be selected explicitly and identified as drafts.
+Knowledge retrieval uses authenticated /api/context/schema and /api/context/query, including exporter reads. Ranked published-page search uses the separate /api/context/search endpoint with an explicit publication scope and generation-checked pagination; FTS tables are not SQL-readable. Original file retrieval uses the protected PocketBase file API. SQL columns are explicitly allowlisted; users, credentials and SQLite metadata are excluded. Questions search published pages through the latest manifest, then source passages; drafts must be selected explicitly and identified as drafts.
 
 The exporter pins one immutable publication, follows its immutable revisions and evidence, and renders a vault root containing wiki/ and raw/. It does not invoke an LLM. Source names are sanitized for presentation and disambiguated by IDs. The generated ownership manifest identifies files eligible for replacement/removal; local edits, unsafe paths and symlinks must fail before replacement. Obsidian settings and unrelated user files remain outside the exporter’s ownership. An exported original is a local copy; revoking server access cannot revoke that copy.
 
@@ -33,4 +33,12 @@ views stay pinned. Browser rendering never ingests Markdown or changes records.
 
 Complete backups include a consistent database snapshot and every immutable source original referenced by it, verified by hashes. Database-only replication cannot establish complete recovery. No direct SQLite business writes or migrations ingest knowledge. Tests use isolated synthetic data.
 
-Initial scope: text/Markdown/PDF/audio ingestion helpers, agent synthesis and question workflows, revisioned publication, citations and links, structural lint, deterministic Obsidian export, auth and recovery preparation. No automatic web crawling, background autonomous LLM service, native vector/FTS dependency, two-way Obsidian synchronization, external messaging, cloud provisioning or real-data migration is included in this local implementation.
+Initial scope: text/Markdown/PDF/audio ingestion helpers, agent synthesis and question workflows, revisioned publication, citations and links, structural lint, deterministic Obsidian export, auth and recovery preparation. No automatic web crawling, background autonomous LLM service, native vector dependency, two-way Obsidian synchronization, external messaging, cloud provisioning or real-data migration is included in this local implementation.
+
+## Derived full-text index
+
+The application maintains a content-storing FTS5 index of each distinct nonarchived
+revision ever selected by a committed publication. Publication and rebuild rotate
+a protected generation record transactionally. Historical scope membership is
+immutable, while global BM25 scores can change with index growth. See
+[search maintenance](fts-adoption.md) for continuation, backfill and recovery.

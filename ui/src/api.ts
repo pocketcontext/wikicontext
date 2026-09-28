@@ -189,26 +189,117 @@ export async function listPages(publicationId: string): Promise<PageSummary[]> {
     `SELECT ${summary} ${published(publicationId)} ORDER BY p.slug`,
   );
 }
+export interface SearchPage {
+  generation: string;
+  hits: (PageSummary & { score: number; excerpt: string })[];
+  hasMore: boolean;
+}
+export class SearchChangedError extends Error {
+  constructor() {
+    super("Search changed. Restart to see consistent results.");
+  }
+}
 export async function searchPages(
   publicationId: string,
   term: string,
   offset = 0,
-  limit = 50,
-): Promise<PageSummary[]> {
+  limit = 20,
+  expectedGeneration?: string,
+): Promise<SearchPage> {
   windowSize(offset, limit);
-  if (term.length > 500)
-    throw new Error("Search must be 500 characters or fewer");
-  if (!(await validatePublication(publicationId))) return [];
-  const words = term.trim().split(/\s+/).filter(Boolean);
-  const conditions = words
-    .map(
-      (word) =>
-        ` AND instr(lower(p.slug || ' ' || r.title || ' ' || r.summary || ' ' || r.body), lower(${literal(word)}))>0`,
+  identity(publicationId);
+  if (limit > 100 || offset > 10000 || (offset > 0 && !expectedGeneration))
+    throw new Error("Invalid search page");
+  if (!term.trim() || term.length > 500 || term.trim().split(/\s+/).length > 16)
+    throw new Error(
+      "Search must contain 1 to 500 characters and at most 16 words",
+    );
+  if (!(await validatePublication(publicationId)))
+    throw new Error("This publication is unavailable");
+  const token = pb.authStore.token;
+  let result: {
+    index: string;
+    scope: string;
+    generation: string;
+    hits: { id: string; score: number; excerpt: string }[];
+    hasMore: boolean;
+    truncated: boolean;
+  };
+  try {
+    result = await pb.send("/api/context/search", {
+      method: "POST",
+      body: {
+        index: "pages",
+        query: term.trim(),
+        scope: publicationId,
+        limit,
+        offset,
+        ...(expectedGeneration ? { expectedGeneration } : {}),
+      },
+    });
+  } catch (error) {
+    if (error && typeof error === "object" && "status" in error) {
+      if (
+        (error.status === 401 || error.status === 403) &&
+        pb.authStore.token === token
+      )
+        pb.authStore.clear();
+      if (error.status === 409) throw new SearchChangedError();
+    }
+    throw error;
+  }
+  if (
+    result.index !== "pages" ||
+    result.scope !== publicationId ||
+    typeof result.generation !== "string" ||
+    !result.generation ||
+    result.generation.length > 128 ||
+    result.generation.includes("\0") ||
+    (expectedGeneration && result.generation !== expectedGeneration)
+  )
+    throw new SearchChangedError();
+  if (
+    !Array.isArray(result.hits) ||
+    result.hits.length > limit ||
+    typeof result.hasMore !== "boolean" ||
+    result.truncated !== result.hasMore ||
+    (result.hasMore && !result.hits.length) ||
+    new Set(result.hits.map((h) => h.id)).size !== result.hits.length
+  )
+    throw new Error("Invalid search response");
+  if (!result.hits.length)
+    return { generation: result.generation, hits: [], hasMore: result.hasMore };
+  for (let i = 1; i < result.hits.length; i++) {
+    const previous = result.hits[i - 1],
+      current = result.hits[i];
+    if (
+      previous.score > current.score ||
+      (previous.score === current.score && previous.id >= current.id)
     )
-    .join("");
-  return query(
-    `SELECT ${summary} ${published(publicationId)}${conditions} ORDER BY p.slug LIMIT ${limit} OFFSET ${offset}`,
+      throw new Error("Invalid search ranking");
+  }
+  const ids = result.hits.map((h) => {
+    if (!Number.isFinite(h.score) || typeof h.excerpt !== "string")
+      throw new Error("Invalid search hit");
+    return identity(h.id);
+  });
+  const rows = await allRows<PageSummary>(
+    `SELECT ${summary} ${published(publicationId)} AND r.id IN (${ids.join(",")}) ORDER BY r.id`,
+    20,
   );
+  const byID = new Map(rows.map((row) => [row.id, row]));
+  if (byID.size !== result.hits.length || rows.length !== byID.size)
+    throw new Error("Search results do not match the selected publication");
+  return {
+    generation: result.generation,
+    hasMore: result.hasMore,
+    hits: result.hits.map((hit) => {
+      const page = byID.get(hit.id);
+      if (!page)
+        throw new Error("Search result is unavailable in this publication");
+      return { ...page, score: hit.score, excerpt: hit.excerpt };
+    }),
+  };
 }
 
 interface CitationRow {

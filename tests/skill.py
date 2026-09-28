@@ -34,11 +34,25 @@ def main():
         page=cli('create','pages',json.dumps({'slug':'synthetic-launch','kind':'concept'}))
         revision=cli('create','page_revisions',json.dumps({'run':run['id'],'page':page['id'],'title':'Synthetic launch','summary':'A synthetic test','body':'A launch on Tuesday [needs verification].'}))
         cli('publish',run['id'],'--expected-revision','1')
-        assert cli('search','Tuesday')['pages'][0]['id']==revision['id']
+        initial_search=cli('search','Tuesday')
+        assert initial_search['pages'][0]['id']==revision['id']
         assert cli('lint')['findings']
         result=cli('export-obsidian',str(Path(tmp)/'vault'))
         assert result['sequence']==1 and (Path(tmp)/'vault/wiki/synthetic-launch.md').is_file()
         assert cli('get','page_revisions',revision['id'])['body'].startswith('A launch')
+        # The portable client uses the same pinned scope/generation pagination as the browser.
+        second=cli('create','ingestion_runs',json.dumps({'key':'portable-second','status':'staging','description':'Synthetic search pagination'}))
+        other=cli('create','pages',json.dumps({'slug':'another-launch','kind':'concept'}))
+        cli('create','page_revisions',json.dumps({'run':second['id'],'page':other['id'],'title':'Tuesday launch','summary':'A second synthetic launch','body':'Tuesday launch details [needs verification].'}))
+        cli('publish',second['id'],'--expected-revision','1')
+        ranked=cli('search','Tuesday','--limit','1')
+        assert len(ranked['pages'])==1 and ranked['hasMore'] and ranked['nextOffset']==1
+        tail=cli('search','Tuesday','--publication',ranked['publication'],'--generation',ranked['generation'],'--offset','1','--limit','1')
+        assert len(tail['pages'])==1 and not tail['hasMore'] and tail['nextOffset'] is None
+        assert tail['pages'][0]['id']!=ranked['pages'][0]['id']
+        assert cli('search','Tuesday','--sequence','1')['pages'][0]['id']==revision['id']
+        cli('search','Tuesday','--publication',initial_search['publication'],'--generation',initial_search['generation'],'--offset','1',expected=4)
+        cli('search','Tuesday','--offset','1',expected=2)
         cli('publish',run['id'],'--expected-revision','1',expected=4)
         cli('update','ingestion_runs',run['id'],'{"status":"cancelled"}',expected=2)
         cli('batch',json.dumps([{'method':'POST','url':'/api/collections/users/records','body':{}}]),expected=2)

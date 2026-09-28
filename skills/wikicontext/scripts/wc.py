@@ -320,7 +320,7 @@ def batch_failures(data):
 def must(cfg, method, path, body=None):
     """Like call(), but an HTTP error ends the command with the server's status and body on stderr."""
     status, data = call(cfg, method, path, body)
-    safe_read = (method == 'GET' or path in ('/api/context/query', '/api/files/token'))
+    safe_read = (method == 'GET' or path in ('/api/context/query', '/api/context/search', '/api/files/token'))
     for attempt in range(3):
         if not safe_read or status not in (429, 503):
             break
@@ -431,7 +431,9 @@ def run(args):
         return 0
     if args.command in ('search', 'lint'):
         import knowledge
-        data = knowledge.search(cfg, args.term) if args.command == 'search' else knowledge.lint(cfg)
+        data = (knowledge.search(cfg, args.term, publication_id=args.publication, sequence=args.sequence,
+                                 limit=args.limit, offset=args.offset, generation=args.generation)
+                if args.command == 'search' else knowledge.lint(cfg))
         say(dump(data, args.pretty), sys.stdout)
         return 0
     if args.command == 'publish':
@@ -540,7 +542,14 @@ def parse(argv):
     publish = commands.add_parser('publish', parents=[pretty], help='atomically publish a staging run after revision checks')
     publish.add_argument('run_id')
     publish.add_argument('--expected-revision', type=int, required=True)
-    add('search', 'search current published pages through WikiContext', ('term', 'words to match'))
+    search = commands.add_parser('search', parents=[pretty], help='rank published revision text with bounded full-text search')
+    search.add_argument('term', help='literal token terms; all terms must match')
+    scope = search.add_mutually_exclusive_group()
+    scope.add_argument('--publication', help='immutable publication record ID; defaults to latest')
+    scope.add_argument('--sequence', type=int, help='historical publication sequence')
+    search.add_argument('--limit', type=int, default=20, help='result page size, 1–100')
+    search.add_argument('--offset', type=int, default=0, help='result offset, 0–10000')
+    search.add_argument('--generation', help='returned index generation, required for continuation')
     add('lint', 'check published graph structure; semantic review remains agent work')
     args = parser.parse_args(argv)
     args.pretty = getattr(args, 'pretty', False)
@@ -561,4 +570,7 @@ def main():
 
 
 if __name__ == '__main__':
+    # Helper modules import wc. Keep their exceptions, token redaction and HTTP
+    # hooks on this same module when the client is executed as a script.
+    sys.modules['wc'] = sys.modules[__name__]
     sys.exit(main())

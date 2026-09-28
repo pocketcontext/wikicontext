@@ -121,6 +121,10 @@
       "actor_type",
       "changes",
       "created"
+    ],
+    "search_state": [
+      "id",
+      "generation"
     ]
   },
   "timeoutMs": 2000,
@@ -132,5 +136,33 @@
     "delivery": "buffer",
     "captureSql": true,
     "maxBytes": 16777216
+  },
+  "search": {
+    "indexes": {
+      "pages": {
+        "table": "published_pages_fts",
+        "collection": "page_revisions",
+        "columns": [
+          "title",
+          "summary",
+          "body"
+        ],
+        "snippetColumn": "body",
+        "weights": [
+          8,
+          3,
+          1
+        ],
+        "scope": {
+          "collection": "publications",
+          "field": "manifest"
+        },
+        "generation": {
+          "collection": "search_state",
+          "record": "pagesindexstate",
+          "field": "generation"
+        }
+      }
+    }
   }
 }

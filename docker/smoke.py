@@ -227,12 +227,43 @@ def write_record(client, user_id):
         headers={'Authorization': client.token, 'Content-Type': 'multipart/form-data; boundary=' + boundary})
     with urllib.request.urlopen(request, timeout=15) as response:
         record = json.load(response)
+    # Persist searchable knowledge too so every populated restore gate verifies FTS.
+    def create(table, data):
+        return json.loads(client.run('create', table, json.dumps(data)))
+    run = create('ingestion_runs', {'key': 'restore-' + record['id'], 'status': 'staging',
+        'description': 'Synthetic search recovery fixture'})
+    page = create('pages', {'slug': 'restore-' + record['id'], 'kind': 'concept'})
+    create('page_revisions', {'run': run['id'], 'page': page['id'],
+        'title': 'Synthetic searchable recovery', 'summary': 'Synthetic restoration check',
+        'body': 'recoverycheck' + record['id'] + ' [needs verification]'})
+    status, _, published = http('PATCH', client.base + '/api/collections/ingestion_runs/records/' + run['id'],
+        {'status': 'published', 'expected_revision': run['revision']}, token=client.token)
+    check(status == 200 and published.get('status') == 'published', 'synthetic search fixture published')
     return record['id'], (record['collectionId'], record['original'], evidence)
 
 
 def check_records(client, document, metadata):
     rows = client.sql(f"SELECT title FROM sources WHERE id = '{document}'")
     check(rows == [['Synthetic knowledge source']], 'synthetic source survives persistence and restore')
+    selected = client.sql(f"""SELECT pub.id,r.id FROM publications pub
+        JOIN json_each(pub.manifest) member
+        JOIN pages p ON p.id=member.key
+        JOIN page_revisions r ON r.id=member.value AND r.page=p.id
+        WHERE p.slug='restore-{document}' AND r.archived=false ORDER BY pub.sequence DESC LIMIT 1""")
+    check(len(selected) == 1, 'published revision survives persistence and restore')
+    generation = client.sql("SELECT generation FROM search_state WHERE id='pagesindexstate'")
+    check(len(generation) == 1 and bool(generation[0][0]), 'search generation survives persistence and restore')
+    status, headers, results = http('POST', client.base + '/api/context/search',
+        {'index': 'pages', 'scope': selected[0][0], 'query': 'recoverycheck' + document}, token=client.token)
+    check(status == 200 and bool(results.get('generation'))
+          and results.get('scope') == selected[0][0]
+          and [hit['id'] for hit in results.get('hits', [])] == [selected[0][1]]
+          and not results.get('hasMore'), 'scoped FTS result and generation recovered')
+    status, _, continuation = http('POST', client.base + '/api/context/search',
+        {'index': 'pages', 'scope': selected[0][0], 'query': 'recoverycheck' + document,
+         'offset': 1, 'expectedGeneration': results['generation']}, token=client.token)
+    check(status == 200 and continuation.get('generation') == results['generation']
+          and continuation.get('hits') == [], 'restored search generation supports consistent pagination')
     collection, filename, evidence = metadata
     status, _, token = http('POST', client.base + '/api/files/token', {}, token=client.token)
     check(status == 200, 'admitted user receives protected file token')

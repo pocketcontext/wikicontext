@@ -1,143 +1,116 @@
-# Proposed publication-scoped search
+# Publication-scoped full-text search
 
-This is a design for a later implementation, not an enabled search API or an
-application migration. Adopting JSON traversal and percentile functions does not
-enable FTS in WikiContext. The reader and portable skill retain lexical search.
+WikiContext uses PocketContext's separate authenticated `/api/context/search`
+endpoint. Browser and portable client search published revision title, summary and
+body with the same publication scope, ranking and generation checks. FTS indexes
+are derived data; immutable revisions, publication manifests and evidence remain
+authoritative. Ordinary SQL cannot read FTS or shadow tables.
 
-## Existing boundaries
-
-PocketContext's [search contract](https://github.com/pocketcontext/pocketcontext/blob/28337607721c3b671dfc6416a5f01ad40f5ffb00/docs/search.md)
-accepts an index, literal query and bounded limit. It has no publication scope,
-offset, cursor or index generation. Its separate read-only engine validates the
-canonical content-storing `unicode61` index and executes fixed parameterized SQL.
-Ordinary SQL cannot read its FTS or shadow tables. See the inspected
-[engine](https://github.com/pocketcontext/pocketcontext/blob/28337607721c3b671dfc6416a5f01ad40f5ffb00/internal/searchread/engine.go).
-
-WikiContext's [publication hook](../pb_hooks/integrity.js) commits an immutable
-manifest with the run transition and audit. The [reader API](../ui/src/api.ts)
-selects exactly the revisions in that manifest and excludes archived revisions.
-The [portable client](../skills/wikicontext/scripts/knowledge.py) also pins a
-publication. These semantics must survive FTS adoption. Filtering a globally
-limited hit list afterward can omit relevant pages and is not a valid substitute.
-
-## Proposed generic server contract
-
-Extend the separate search endpoint, preserving its fixed SQL, authentication,
-resource limits and shared-workspace visibility. No application-specific
-publication logic belongs in PocketContext.
-
-An index's configuration would declare a scope collection, a JSON object field
-whose values identify indexed source records, and a generation collection,
-fixed record ID and token field. All referenced collections and fields must be
-ordinary, nonhidden, SQL-readable application data. Configuration supplies
-identifiers; requests supply only values. Scope is result membership, not a new
-authorization boundary. Every admitted user can still search configured scopes.
-
-For WikiContext, the scope collection is `publications`, the selector is its
-record ID, and the membership field is `manifest`. The generation is a separate
-application-maintained record. Illustrative request fields, not implemented:
+## Contract
 
 ```json
 {
   "index": "pages",
   "query": "deployment safety",
   "scope": "publication0001",
-  "limit": 50,
-  "offset": 0,
-  "expectedGeneration": "opaque-index-generation"
+  "limit": 20,
+  "offset": 0
 }
 ```
 
-The first request may omit `expectedGeneration`. The response returns the scope,
-generation, hits and `hasMore`. Subsequent pages require that generation. The
-server rejects a changed generation with 409, and the client restarts results
-instead of appending a potentially inconsistent page. Offsets and scope sizes
-need explicit bounds; WikiContext's current publication budget is 10,000 pages.
+Use a real publication record ID for `scope`. Results contain `scope`,
+`generation`, `hits`, `hasMore` and `truncated`; hits contain revision `id`, BM25
+`score` and plain-text `excerpt`. Lower scores rank first, with revision ID as the
+stable tie-breaker within one index generation. Clients hydrate page identity,
+slug, kind, title and summary through the same immutable manifest and fail if a
+hit is absent or archived. Scope membership is filtered before the result limit.
 
-Within one read transaction the server must validate the scope and generation,
-validate the index, filter membership before pagination, and read results ordered
-by BM25 score then record ID. A missing scope must not become an unscoped search.
-Malformed membership must fail closed. Missing indexed members alone cannot
-establish corruption: archived revisions intentionally have no index entry.
-WikiContext's maintenance and recovery checks establish expected coverage.
+The first request may omit `expectedGeneration`. Later pages send the returned
+generation, the same scope and query, and an increased offset. HTTP 409 means the
+index changed: discard accumulated pages and restart at zero without the old
+generation. Browser results expose a restart action rather than silently mixing
+pages; the portable client exits with code 4 and prints restart instructions.
 
-The response limit remains bounded. Requesting one additional hit determines
-`hasMore`; there is no promise of a cheap total count. Stable generation checking
-is needed with either offset or keyset pagination. Signing a cursor alone would
-not stabilize a changing ranking corpus.
+The returned generation is an opaque digest of the application state token, index
+configuration, ranking contract, SQLite identity, selected scope and validated
+membership. Replay the API response token; the raw SQL `search_state.generation`
+value is not a pagination token. Configuration or membership changes invalidate
+continuation even when the application state token stays unchanged.
 
-## Application index and maintenance
+Limits are 1–100 results per request (default 20), 0–10,000 offset, 10,000 scope
+members, 4096 query UTF-8 bytes and 16 whitespace-separated terms. Every term is
+encoded as a literal FTS phrase joined with AND. There is no raw FTS expression,
+prefix, arbitrary substring, typo correction or semantic search. This deliberately
+changes the old substring search behavior. Slugs and page kinds are display
+metadata, not indexed text. Empty browser input returns to browsing.
 
-Start with one index over `page_revisions`, using the immutable revision ID as
-`record_id`, and title, summary and body as its text columns. Keep canonical
-content-storing `unicode61` DDL. Measure title/summary/body weights before choosing
-defaults. Slug, kind and normalized Markdown projections are outside this first
-index; clients can fetch display metadata through the selected manifest.
+Excerpts are untrusted plain text. Clients render them without source HTML or
+fabricated highlighting. They are navigation aids, not passage citations. Source
+passages and originals remain available through the evidence viewer and SQL/file
+APIs; they are not part of this search index.
 
-Index each distinct nonarchived revision that has appeared in any committed
-publication, once. Never index staging revisions. Archiving a page later must
-not delete earlier nonarchived revisions: they remain searchable through earlier
-manifests. The archive revision itself is not indexed, so it yields no hit in a
-manifest selecting that archive. Historical revisions cannot leak into current
-results because membership filtering precedes the limit.
+## Publication and history
 
-Trusted publication hooks insert newly published searchable revisions and rotate
-the generation token in the same transaction as publication, run state and audit.
-Clients cannot write the generation record or derived index through ordinary
-record APIs. Backfill traverses committed manifests and deduplicates revision
-IDs. Rebuilds atomically replace derived contents and rotate the generation even
-if publication identity is unchanged. Failed publication or rebuild rolls back
-all derived changes. A restored database must contain mutually consistent
-manifests, revisions, index and generation.
+`published_pages_fts` is one canonical content-storing `unicode61` index over
+`page_revisions`. `record_id` is the immutable revision ID. Initial
+title/summary/body weights are 8/3/1; see [measurements](search-benchmark.md) for
+the synthetic evaluation and its limits.
 
-Generation is an application consistency promise: every index mutation,
-including maintenance, must rotate it. It must not be inferred from a connection's
-SQLite `data_version`, row count, maximum rowid or latest publication ID. Those
-are insufficient to detect every rebuild or update across pooled requests.
+The migration backfills each distinct nonarchived revision selected by any
+committed publication. Publication hooks insert newly published nonarchived
+revisions and rotate `search_state/pagesindexstate.generation` in the same
+transaction as the publication, run transition and audit. Failed publication
+rolls back both derived and canonical changes. Staged revisions are never indexed.
 
-## Ranking and client behavior
+Archiving later does not delete an earlier nonarchived revision: historical
+publications must still find it. An archive revision itself is not indexed. The
+selected publication's manifest controls which historical revision can match.
 
-An all-history index uses global BM25 statistics. Even when membership is pinned
-to an immutable publication, adding another revision can change the scores and
-order of that publication's results. Generation checking prevents mixed pages;
-it does not promise historically reproducible scores. Reproducible rankings
-would require a separate design with stable statistics or stored search results.
-Measure how repeated historical text affects relevance before shipping.
+An all-history index uses global BM25 statistics. Additional publications may
+change the scores/order of an older publication's results. Generation checking
+prevents inconsistent pagination; it does not provide historically reproducible
+rankings. Continuous publication can require repeated restarts. A restart with
+changed ranking configuration also invalidates existing pagination tokens.
 
-Browser and portable skill must use the same scope and generation contract.
-Live views adopt a new publication and restart search; historical views keep their
-publication but restart pagination if the corpus generation changes. Opening a
-hit must resolve its page through that same publication. Preserve search query
-and publication in navigation, and provide explicit restart, loading, empty and
-error states. Continuous writes may repeatedly invalidate pagination; do not
-silently append mixed-generation results to hide that limitation.
+## Maintenance and recovery
 
-The existing endpoint treats whitespace-separated terms as literal FTS phrases
-joined by AND. It provides neither prefix matching nor arbitrary substring
-matching. Excerpts are untrusted plain text without match offsets. Render them
-as text; faithful highlights, prefix matching and source-passage search require
-separate contracts and tests.
+The `search_state` collection is SQL-readable but server-maintained. Record API
+creation, update and deletion are rejected even for superusers. Ordinary users
+cannot write FTS tables or rotate the generation.
 
-## Implementation gates
+An operator with an existing superuser maintenance session may call
+`POST /api/wiki/search/rebuild` with no request body. The route validates all
+publication manifests, atomically rebuilds the derived index from canonical
+records, and rotates the application state token. Its `stateGeneration` response
+is the raw maintenance token, not the opaque search pagination token. Failure preserves the previous complete
+index and token. A rebuild holds the writer transaction and can delay publication;
+use a maintenance window for large histories. It repopulates a valid index, not
+a dropped or noncanonical FTS schema; restore trusted schema or a verified backup
+before rebuilding such an index. Do not expose maintenance credentials to knowledge clients or
+use this endpoint as part of ordinary search. Search never repairs indexes.
 
-1. Extend and test generic scope/generation configuration, fixed query generation,
-   authorizer permissions, limits and HTTP conflict behavior in PocketContext.
-   Preserve denials for hidden/auth/system fields, arbitrary SQL, FTS shadows,
-   metadata, extensions and filtered-snapshot configurations.
-2. Build synthetic fixtures covering drafts, archives, earlier nonarchived
-   revisions, multiple revisions per page, publication conflicts, rollback,
-   membership corruption and concurrent publication between result pages.
-3. Implement application backfill, transactional maintenance and generation
-   protection. Verify rebuild failure, complete backups and populated restores.
-4. Benchmark near the page budget with realistic revision history and document
-   lengths. Measure relevance, broad/missing queries, concurrent readers,
-   publication cost, index growth and generation restarts. The existing core
-   [benchmark](https://github.com/pocketcontext/pocketcontext/blob/28337607721c3b671dfc6416a5f01ad40f5ffb00/docs/search-benchmark.md)
-   does not establish a general speedup; per-request corpus validation is O(N).
-5. Adopt the tested server pin, then enable the application index and common
-   browser/skill contract. Run the README application, UI and container/restore
-   gates, including keyboard/mobile navigation and hostile excerpt content.
+Complete database/original-file backups include the index and generation. After
+restore, validate historical/live membership and protected originals. Rebuild can
+repair derived contents from valid canonical data; it cannot repair invalid
+publication manifests. Preserve the single-writer deployment procedure.
 
-Latest-only FTS plus lexical historical search is not the chosen design: it would
-give the same reader different retrieval semantics without solving complete
-pagination. Keep lexical search functional until the scoped contract is ready.
+## Validation and resource limits
+
+The server validates canonical FTS/shadow DDL and every indexed ID on each search,
+then reads the scope, generation and ranked matches in the same read transaction.
+It rejects malformed, missing or duplicate scope keys and missing source records.
+Archived revisions may legitimately have no index entry; application tests and
+maintenance establish index coverage. Scope is a result filter, not a separate
+permission model: all admitted workspace users share search access.
+
+Whole-index validation is O(N), where N includes historical indexed revisions.
+A result limit does not cap ranking/validation work. The configured two-second
+deadline, one-MiB response cap, shared SQLite heap bound and four-connection search
+pool still apply. Timeouts or unavailable indexes produce explicit failures;
+clients do not silently fall back to a different retrieval model.
+
+Run the README's full validation suite, including `tests/search_integration.py`,
+portable client pagination/conflicts, UI browser checks and complete populated
+container restore gates. `tests/search_benchmark.py` measures synthetic relevance,
+latency, publication cost and storage across revision history; it is not a live
+WikiContext performance guarantee.

@@ -80,7 +80,9 @@ test("published reader: navigation, evidence, safe Markdown, live updates, histo
   await page.bringToFront();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Citation 1", exact: true })).toBeFocused();
+  await expect(
+    page.getByRole("button", { name: "Citation 1", exact: true }),
+  ).toBeFocused();
   await page.getByRole("link", { name: "the telescope", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Telescope", exact: true }),
@@ -96,10 +98,16 @@ test("published reader: navigation, evidence, safe Markdown, live updates, histo
 
   const search = page.getByLabel("Search pages", { exact: true });
   await search.fill("telescope");
+  const searchResults = page.getByRole("region", { name: "Search results" });
   await expect(
-    page.getByRole("link", { name: "Telescope", exact: true }).first(),
+    searchResults.getByRole("heading", { name: "Search results" }),
   ).toBeVisible();
+  await expect(searchResults.locator("li")).toHaveCount(20);
   await search.fill("");
+  await page
+    .locator(".page-list")
+    .getByRole("link", { name: "Observatory", exact: true })
+    .click();
   await search.focus();
   await page.keyboard.press("Tab");
   expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe(
@@ -212,4 +220,114 @@ test("published reader: navigation, evidence, safe Markdown, live updates, histo
     page.getByText("Published edition 4.", { exact: false }),
   ).toHaveCount(0);
   expect(errors).toEqual([]);
+});
+
+test("ranked search: scoped pagination, safe excerpts, back navigation, conflicts and mobile", async ({
+  page,
+  request,
+}) => {
+  await login(page);
+  await page.keyboard.press("Control+k");
+  const search = page.getByLabel("Search pages", { exact: true });
+  await expect(search).toBeFocused();
+  await search.fill("starlight");
+  const results = page.getByRole("region", { name: "Search results" });
+  await expect(results.locator("li")).toHaveCount(20);
+  await expect(results.locator("img,script")).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Pages" })).toBeVisible();
+  await page.getByRole("button", { name: "Load more results" }).click();
+  await expect(results.locator("li")).toHaveCount(25);
+  await page
+    .locator("#reader")
+    .evaluate((node) => node.scrollTo({ top: 0, behavior: "instant" }));
+  await page.screenshot({
+    path: "/tmp/wikicontext-search-desktop.png",
+    fullPage: true,
+  });
+  await expect(
+    page.getByRole("button", { name: "Load more results" }),
+  ).toHaveCount(0);
+  const last = results.locator("h2 a").last();
+  const selectedTitle = await last.textContent();
+  await last.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(400);
+  const scroll = await page
+    .locator("#reader")
+    .evaluate((node) => node.scrollTop);
+  await last.click();
+  await expect(
+    page.getByRole("heading", { name: selectedTitle!, exact: true }),
+  ).toBeVisible();
+  await page.goBack();
+  await expect(results.locator("li")).toHaveCount(25);
+  await expect(
+    results.getByRole("link", { name: selectedTitle!, exact: true }),
+  ).toBeFocused();
+  await expect
+    .poll(async () =>
+      page.locator("#reader").evaluate((node) => node.scrollTop),
+    )
+    .toBeCloseTo(scroll, -1);
+  const published = await request.post(
+    process.env.WIKICONTEXT_TEST_CONTROL + "/publish",
+  );
+  expect(published.ok()).toBeTruthy();
+  await expect(results.locator("li")).toHaveCount(20);
+  await page.reload();
+  await expect(search).toHaveValue("starlight");
+  await expect(results.locator("li")).toHaveCount(20);
+  let conflicted = false;
+  await page.route("**/api/context/search", async (route) => {
+    if (route.request().postDataJSON().offset > 0 && !conflicted) {
+      conflicted = true;
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({ message: "Search changed" }),
+      });
+    } else await route.continue();
+  });
+  await page.getByRole("button", { name: "Load more results" }).click();
+  await expect(results.locator("li")).toHaveCount(0);
+  await page.getByRole("button", { name: "Restart search" }).click();
+  await expect(results.locator("li")).toHaveCount(20);
+  await page.unroute("**/api/context/search");
+  await page.route("**/api/context/search", (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ message: "Search temporarily unavailable" }),
+    }),
+  );
+  await search.fill("missingword");
+  await expect(results.getByRole("alert")).toBeVisible();
+  await expect(results.locator("li")).toHaveCount(0);
+  await page.unroute("**/api/context/search");
+  await page.getByRole("button", { name: "Retry search" }).click();
+  await expect(results).toContainText("No published pages match");
+  await search.fill("editiontoken1");
+  await expect(results).toContainText("No published pages match");
+  await page
+    .getByLabel("Publication", { exact: true })
+    .selectOption({ label: "Publication 1" });
+  await expect(results.locator("li")).toHaveCount(1);
+  await expect(results).toContainText("Published edition 1");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("/");
+  await expect(search).toBeFocused();
+  await search.fill("starlight");
+  await search.press("Enter");
+  await expect(results.locator("li")).toHaveCount(20);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBeTruthy();
+  await page.screenshot({
+    path: "/tmp/wikicontext-search-mobile.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "Load more results" }).click();
+  await expect(results.locator("li")).toHaveCount(25);
 });

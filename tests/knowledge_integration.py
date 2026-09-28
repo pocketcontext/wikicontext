@@ -57,9 +57,10 @@ def main():
         calls, advanced = [], False
         def authenticated(cfg, method, path, body=None):
             nonlocal advanced
-            calls.append(body['sql'])
+            if path == '/api/context/query':
+                calls.append(body['sql'])
             result = request(method, path, body, token)
-            if not advanced and 'ORDER BY sequence DESC LIMIT 1' in body['sql']:
+            if not advanced and 'ORDER BY sequence DESC LIMIT 1' in body.get('sql', ''):
                 advanced = True
                 publish(second)
             return result

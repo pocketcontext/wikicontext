@@ -51,7 +51,9 @@ describe("published knowledge reads", () => {
   it("returns no content for an unavailable publication", async () => {
     const send = vi.spyOn(pb, "send").mockResolvedValue(response([]));
     await expect(listPages(publication)).resolves.toEqual([]);
-    await expect(searchPages(publication, "anything")).resolves.toEqual([]);
+    await expect(searchPages(publication, "anything")).rejects.toThrow(
+      "unavailable",
+    );
     await expect(getPage(publication, "missing")).resolves.toBeNull();
     expect(send).toHaveBeenCalledTimes(3);
   });
@@ -111,17 +113,105 @@ describe("published knowledge reads", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
-  it("quotes search terms and keeps searches within a pinned publication", async () => {
+  it("sends literal search terms and hydrates only exact scoped revisions in rank order", async () => {
+    const first = {
+      id: "revision0000001",
+      page: "page00000000001",
+      title: "First",
+    };
+    const second = {
+      id: "revision0000002",
+      page: "page00000000002",
+      title: "Second",
+    };
     const send = vi
       .spyOn(pb, "send")
       .mockResolvedValueOnce(validManifest())
-      .mockResolvedValue(response([]));
-    await searchPages(publication, "O'Brien %", 50, 50);
-    const sql = send.mock.calls[1][1]?.body.sql as string;
-    expect(sql).toContain("lower('O''Brien')");
-    expect(sql).toContain("lower('%')");
-    expect(sql).toContain("pub.id='publication0001'");
-    expect(sql).toContain("LIMIT 50 OFFSET 50");
+      .mockResolvedValueOnce({
+        index: "pages",
+        scope: publication,
+        generation: "generation1",
+        hasMore: false,
+        truncated: false,
+        hits: [
+          { id: second.id, score: -2, excerpt: "<script>untrusted</script>" },
+          { id: first.id, score: -1, excerpt: "First" },
+        ],
+      })
+      .mockResolvedValueOnce(response([first, second]));
+    const found = await searchPages(
+      publication,
+      "O'Brien %",
+      20,
+      20,
+      "generation1",
+    );
+    expect(send.mock.calls[1][0]).toBe("/api/context/search");
+    expect(send.mock.calls[1][1]?.body).toEqual({
+      index: "pages",
+      scope: publication,
+      query: "O'Brien %",
+      offset: 20,
+      limit: 20,
+      expectedGeneration: "generation1",
+    });
+    expect(found.hits.map((hit) => hit.id)).toEqual([second.id, first.id]);
+    expect(found.hits[0].excerpt).toBe("<script>untrusted</script>");
+    expect(send.mock.calls[2][1]?.body.sql).toContain(
+      "pub.id='publication0001'",
+    );
+    expect(send.mock.calls[2][1]?.body.sql).toContain("r.id=m.value");
+  });
+  it("rejects hits missing from the selected publication", async () => {
+    vi.spyOn(pb, "send")
+      .mockResolvedValueOnce(validManifest())
+      .mockResolvedValueOnce({
+        index: "pages",
+        scope: publication,
+        generation: "g",
+        hasMore: false,
+        truncated: false,
+        hits: [{ id: "revision0000001", score: -1, excerpt: "draft" }],
+      })
+      .mockResolvedValueOnce(response([]));
+    await expect(searchPages(publication, "draft")).rejects.toThrow(
+      "selected publication",
+    );
+  });
+  it("requires generation for later pages and reports a changed generation", async () => {
+    const send = vi.spyOn(pb, "send");
+    await expect(searchPages(publication, "word", 20)).rejects.toThrow(
+      "search page",
+    );
+    expect(send).not.toHaveBeenCalled();
+    send
+      .mockResolvedValueOnce(validManifest())
+      .mockRejectedValueOnce({ status: 409 });
+    await expect(
+      searchPages(publication, "word", 20, 20, "old"),
+    ).rejects.toThrow("Search changed");
+  });
+
+  it.each([
+    { generation: 123 },
+    { generation: "" },
+    { generation: "a\0b" },
+    { truncated: true },
+    { hasMore: true },
+    { scope: "publication0002" },
+  ])("rejects malformed or mismatched search metadata: %j", async (patch) => {
+    vi.spyOn(pb, "send")
+      .mockResolvedValueOnce(validManifest())
+      .mockResolvedValueOnce({
+        index: "pages",
+        scope: publication,
+        generation: "g",
+        hits: [],
+        hasMore: false,
+        truncated: false,
+        ...patch,
+      });
+    await expect(searchPages(publication, "word")).rejects.toThrow();
   });
 
   it("returns missing pages without querying draft evidence", async () => {

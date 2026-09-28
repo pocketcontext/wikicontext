@@ -17,10 +17,9 @@ make build
 
 The pinned build includes `sqlite_math_functions,sqlite_percentile,sqlite_fts5`.
 Authenticated SQL supports `json_each`/`json_tree` and median/percentile aggregates.
-FTS5 is compiled in, but WikiContext does not configure the optional search endpoint;
-published-page search continues to use SQL and an immutable publication manifest.
-See the [publication-scoped FTS design](docs/fts-adoption.md) for the remaining
-server and application work.
+Published-page search uses the authenticated FTS5 endpoint with immutable
+publication scopes and generation-checked pagination. See the
+[search contract and maintenance guide](docs/fts-adoption.md).
 
 Keep data outside Git. Provision users through operator maintenance, or configure a separate Google Web client with `WIKICONTEXT_GOOGLE_CLIENT_ID`, `WIKICONTEXT_GOOGLE_CLIENT_SECRET` and `WIKICONTEXT_GOOGLE_WORKSPACE_DOMAIN`. Register `http://127.0.0.1:8765/callback` and the approved origin's `/api/oauth2-redirect`. Use ordinary user credentials for knowledge operations. Production runs at https://wiki.pocketcontext.com. See [release verification](DEPLOYMENT.md) and [deployment procedures](docs/deployment.md).
 
@@ -29,7 +28,9 @@ Keep data outside Git. Provision users through operator maintenance, or configur
 Open the application origin and sign in with your Workspace Google identity.
 Existing password accounts can use the secondary password form. The reader is
 read-only; agents continue to ingest, synthesize and publish through the skill.
-The sidebar searches published page text. Wiki links, backlinks, an outline and
+Search opens ranked published-page results with plain excerpts and Load more.
+The sidebar remains available for browsing. `/` or Ctrl/Cmd+K focuses search; query
+and publication are preserved in navigation. Wiki links, backlinks, an outline and
 source citations support navigation. A citation opens its original passage and
 offers an authenticated original-file download.
 
@@ -83,7 +84,7 @@ Supported extraction: UTF-8 text/Markdown and related text formats; text PDFs us
 
 The exporter writes `wiki/` and `raw/` under the destination. Numbered source footnotes, wiki-links, page metadata, index and publication log are deterministic. Exports pin one immutable publication; `--sequence N` selects history. An ownership manifest detects local edits/deletions, prevents overwriting unrelated files, and supports interrupted-export recovery. `.obsidian/` remains untouched. Avoid concurrent local editing during export; the exporter lock coordinates exporters, not external editors. Use a fresh destination for initial migration: existing authored wiki files are not silently adopted. Downloaded files cannot be revoked remotely.
 
-See [data model](docs/data-model.md) and [skill workflows](skills/wikicontext/references/workflows.md) for synthesis, idempotency, queries, corrections and publication. Structural lint does not establish semantic correctness. The current search scans published page text through SQL and does not supply native FTS/vector search. Raw SQL queries must explicitly distinguish draft revisions from the published manifest.
+See [data model](docs/data-model.md) and [skill workflows](skills/wikicontext/references/workflows.md) for synthesis, idempotency, queries, corrections and publication. Structural lint does not establish semantic correctness. Full-text search indexes published revision title, summary and body; it uses token matching rather than the former arbitrary substring matching. It does not provide vector search or generated answers. Raw SQL queries must explicitly distinguish draft revisions from the published manifest.
 
 ## SQL diagnostics
 
@@ -118,6 +119,7 @@ python3 tests/realtime_publication.py --binary /absolute/path/to/pinned/pocketco
 python3 tests/oauth_integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/skill.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/knowledge_integration.py --binary /absolute/path/to/pinned/pocketcontext
+python3 tests/search_integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/ingest_integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/export_integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/deploy.py --binary /absolute/path/to/pinned/pocketcontext
@@ -151,7 +153,7 @@ The existing `wiki/` checkout has not been modified or migrated. Import original
 
 ## Infrastructure provenance
 
-Authentication and portable OAuth client adapted from RaiseContext `44f8f10537388f9a934a2bc1800d3df6a046c580`; revision/concurrency and realtime test patterns from TaskContext `5bb214ef32fcffa9a42bb1de2d13cfd4052dc80f`; protected originals, complete backups and container/deployment patterns from AccountContext `2b78c0f38680381376b0ce485312ff659037a13f`. WikiContext's domain schema and publication/export model are independent. Server pin: `28337607721c3b671dfc6416a5f01ad40f5ffb00`.
+Authentication and portable OAuth client adapted from RaiseContext `44f8f10537388f9a934a2bc1800d3df6a046c580`; revision/concurrency and realtime test patterns from TaskContext `5bb214ef32fcffa9a42bb1de2d13cfd4052dc80f`; protected originals, complete backups and container/deployment patterns from AccountContext `2b78c0f38680381376b0ce485312ff659037a13f`. WikiContext's domain schema and publication/export model are independent. Server pin: `91d7ef14b02a476b2212aa80b365b6c024a19c15`.
 
 ## Request observability
 

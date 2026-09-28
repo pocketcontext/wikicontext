@@ -1,8 +1,22 @@
 {
+  "permissionModel": "shared",
   "limits": {
     "timeoutMs": 2000,
     "maxRows": 500,
     "maxBytes": 1048576
+  },
+  "search": {
+    "indexes": [
+      "pages"
+    ],
+    "limits": {
+      "maxTerms": 16,
+      "maxOffset": 10000,
+      "maxScopeMembers": 10000,
+      "maxLimit": 100,
+      "defaultLimit": 20,
+      "maxQueryBytes": 4096
+    }
   },
   "tables": [
     {
@@ -387,6 +401,19 @@
       ]
     },
     {
+      "name": "search_state",
+      "columns": [
+        {
+          "name": "generation",
+          "type": "TEXT"
+        },
+        {
+          "name": "id",
+          "type": "TEXT"
+        }
+      ]
+    },
+    {
       "name": "sources",
       "columns": [
         {
@@ -456,6 +483,5 @@
         }
       ]
     }
-  ],
-  "permissionModel": "shared"
+  ]
 }

@@ -6,6 +6,7 @@ import {
   type FormEvent,
 } from "react";
 import { api, pb } from "./api";
+import SearchResults, { searchHref } from "./SearchResults";
 import type { Publication, PageSummary, PageDetail, Citation } from "./types";
 import { Markdown, pageHref } from "./Markdown";
 function safeDecode(value: string) {
@@ -29,6 +30,7 @@ function route() {
     slug: safeDecode(path.replace(/^page\//, "")),
     publication: params.get("publication") || "",
     heading: params.get("heading") || "",
+    query: params.get("q") || "",
   };
 }
 function message(error: unknown) {
@@ -48,11 +50,13 @@ export default function App() {
   } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(current.query);
+  const [searchEpoch, setSearchEpoch] = useState(0);
+  const lastPublication = useRef<string | undefined>(undefined);
+  const latestSeen = useRef("");
   const [outline, setOutline] = useState<
     { level: number; title: string; id: string }[]
   >([]);
-  const [results, setResults] = useState<PageSummary[] | null>(null);
   const [evidence, setEvidence] = useState<Citation | null>(null);
   const [original, setOriginal] = useState("");
   const [menu, setMenu] = useState(false);
@@ -81,10 +85,10 @@ export default function App() {
         next.publication !== previous.publication
       ) {
         generation.current++;
-        setSnapshot(null);
       }
       routeSelection.current = next;
       setCurrent(next);
+      setSearch(next.query);
       setEvidence(null);
       setMenu(false);
     };
@@ -102,7 +106,7 @@ export default function App() {
           setPublications([]);
           setEvidence(null);
           setOriginal("");
-          setResults(null);
+          lastPublication.current = undefined;
           setSearch("");
         }
       }, true),
@@ -110,10 +114,17 @@ export default function App() {
   );
   useEffect(() => {
     const shortcut = (event: KeyboardEvent) => {
+      const editing =
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement ||
+        (event.target instanceof HTMLElement && event.target.isContentEditable);
       if (
-        event.key === "/" &&
-        !(event.target instanceof HTMLInputElement) &&
-        !(event.target instanceof HTMLTextAreaElement)
+        ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") ||
+        (event.key === "/" &&
+          !editing &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.altKey)
       ) {
         event.preventDefault();
         setMenu(true);
@@ -135,6 +146,11 @@ export default function App() {
     try {
       await api.refreshSession();
       const history = await api.listPublications();
+      if (own === generation.current && history[0]) {
+        if (latestSeen.current && latestSeen.current !== history[0].id)
+          setSearchEpoch((n) => n + 1);
+        latestSeen.current = history[0].id;
+      }
       if (own === generation.current) {
         historyOffset.current = history.length;
         setMoreHistory(history.length === 50);
@@ -163,6 +179,7 @@ export default function App() {
       const page = slug ? await api.getPage(publication.id, slug) : null;
       if (own === generation.current) {
         setPublications(history);
+        lastPublication.current = publication.id;
         setSnapshot({ publication, pages, page });
         setEvidence((previous) =>
           previous && page?.citations.some((c) => c.id === previous.id)
@@ -224,25 +241,6 @@ export default function App() {
         ?.scrollIntoView?.({ behavior: "smooth" });
   }, [current.heading, snapshot]);
   useEffect(() => {
-    setResults(null);
-    if (!search.trim() || !snapshot) return;
-    let disposed = false;
-    const timeout = setTimeout(() => {
-      api
-        .searchPages(snapshot.publication.id, search.trim())
-        .then((rows) => {
-          if (!disposed) setResults(rows);
-        })
-        .catch((e) => {
-          if (!disposed) setError(message(e));
-        });
-    }, 180);
-    return () => {
-      disposed = true;
-      clearTimeout(timeout);
-    };
-  }, [search, snapshot]);
-  useEffect(() => {
     if (!evidence) return;
     setOriginal("");
     let disposed = false;
@@ -273,9 +271,17 @@ export default function App() {
     });
   };
   const navigatePublication = (id: string) => {
-    location.hash = pageHref(
-      current.slug || snapshot?.page?.slug || "",
-      id === "live" ? undefined : id,
+    location.hash = (
+      current.query
+        ? searchHref(
+            current.query,
+            id === "live" ? undefined : id,
+            current.slug,
+          )
+        : pageHref(
+            current.slug || snapshot?.page?.slug || "",
+            id === "live" ? undefined : id,
+          )
     ).slice(1);
   };
   useEffect(() => {
@@ -313,8 +319,14 @@ export default function App() {
   );
   const pinned = current.publication || undefined;
   if (!authenticated) return <Login theme={theme} setTheme={setTheme} />;
-  const page = snapshot?.page;
-  const pages = search.trim() ? results || [] : snapshot?.pages || [];
+  const page =
+    (!current.publication ||
+      snapshot?.publication.id === current.publication) &&
+    (!current.slug || snapshot?.page?.slug === current.slug)
+      ? snapshot?.page
+      : null;
+  const pages = snapshot?.pages || [];
+  const searching = Boolean(current.query.trim() && !current.slug);
   return (
     <div className="workspace">
       <a
@@ -347,12 +359,29 @@ export default function App() {
             type="search"
             placeholder="Search your knowledge…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            maxLength={500}
+            onChange={(e) => {
+              const value = e.target.value;
+              setSearch(value);
+              const href = value.trim()
+                ? searchHref(value, current.publication || undefined)
+                : pageHref("", current.publication || undefined);
+              history.replaceState(null, "", href);
+              const next = route();
+              routeSelection.current = next;
+              setCurrent(next);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                setMenu(false);
+                reader.current?.focus();
+              }
+            }}
           />
           <kbd>/</kbd>
         </label>
         <div className="nav-label">
-          {search ? "SEARCH RESULTS" : "PAGES"}
+          PAGES
           <span>{pages.length}</span>
         </div>
         <nav className="page-list" aria-label="Pages">
@@ -369,17 +398,6 @@ export default function App() {
               <span>{p.title}</span>
             </a>
           ))}
-          {search && pages.length === 50 && (
-            <p className="nav-empty">
-              Showing the first 50 matches. Refine your search to narrow the
-              results.
-            </p>
-          )}
-          {search && !pages.length && (
-            <p className="nav-empty">
-              {results ? "No pages match your search." : "Searching…"}
-            </p>
-          )}
         </nav>
         <div className="sidebar-bottom">
           <div className="connection">
@@ -407,7 +425,9 @@ export default function App() {
           </button>
           <div className="breadcrumb">
             Wiki <span>/</span>{" "}
-            <strong>{page?.title || "Your knowledge"}</strong>
+            <strong>
+              {searching ? "Search" : page?.title || "Your knowledge"}
+            </strong>
           </div>
           <div className="topbar-actions">
             <label className="publication-control">
@@ -476,74 +496,98 @@ export default function App() {
             tabIndex={-1}
             aria-busy={busy}
           >
-            {page ? (
-              <article>
-                <div className="page-eyebrow">
-                  <span>{page.kind || "WIKI PAGE"}</span>
-                  <span className="quiet">
-                    Publication {snapshot?.publication.sequence}
-                  </span>
+            <SearchResults
+              publication={snapshot?.publication.id || lastPublication.current}
+              query={current.query}
+              visible={
+                searching && (!pinned || snapshot?.publication.id === pinned)
+              }
+              epoch={searchEpoch}
+            />
+            {!searching &&
+              (page ? (
+                <article>
+                  {current.query && current.slug && (
+                    <a
+                      className="back-to-search"
+                      href={searchHref(current.query, pinned)}
+                    >
+                      ← Back to search results
+                    </a>
+                  )}
+
+                  <div className="page-eyebrow">
+                    <span>{page.kind || "WIKI PAGE"}</span>
+                    <span className="quiet">
+                      Publication {snapshot?.publication.sequence}
+                    </span>
+                  </div>
+                  <h1 className="page-title">{page.title}</h1>
+                  {page.summary && (
+                    <p className="page-summary">{page.summary}</p>
+                  )}
+                  <div className="page-rule" />
+                  <div className="markdown">
+                    <Markdown
+                      body={page.body}
+                      publication={pinned}
+                      resolveSlug={resolveSlug}
+                      onCitation={openCitation}
+                    />
+                  </div>
+                  {page.citations.length > 0 && (
+                    <section className="sources-section">
+                      <h2>Sources</h2>
+                      {page.citations.map((c) => (
+                        <button
+                          key={c.id}
+                          className="source-row"
+                          onClick={(event) => {
+                            lastCitationFocus.current = event.currentTarget;
+                            setEvidence(c);
+                          }}
+                          aria-label={`Citation ${c.marker}: ${c.source.title}`}
+                        >
+                          <span className="source-number">{c.marker}</span>
+                          <span>
+                            <strong>{c.source.title}</strong>
+                            <small>
+                              {c.passage.locator ||
+                                `Passage ${c.passage.ordinal}`}
+                            </small>
+                          </span>
+                          <span aria-hidden="true">↗</span>
+                        </button>
+                      ))}
+                    </section>
+                  )}
+                  <footer className="page-footer">
+                    Published knowledge, connected to its evidence.
+                  </footer>
+                </article>
+              ) : (
+                <div className="empty-state">
+                  <span className="empty-icon">▤</span>
+                  <h1>
+                    {busy
+                      ? "Opening your wiki…"
+                      : current.slug
+                        ? "Page unavailable"
+                        : "A home for your knowledge"}
+                  </h1>
+                  <p>
+                    {current.slug
+                      ? "This page is not available in the selected publication. Choose a page from the sidebar."
+                      : "Published pages will appear here as your workspace grows."}
+                  </p>
                 </div>
-                <h1 className="page-title">{page.title}</h1>
-                {page.summary && <p className="page-summary">{page.summary}</p>}
-                <div className="page-rule" />
-                <div className="markdown">
-                  <Markdown
-                    body={page.body}
-                    publication={pinned}
-                    resolveSlug={resolveSlug}
-                    onCitation={openCitation}
-                  />
-                </div>
-                {page.citations.length > 0 && (
-                  <section className="sources-section">
-                    <h2>Sources</h2>
-                    {page.citations.map((c) => (
-                      <button
-                        key={c.id}
-                        className="source-row"
-                        onClick={(event) => {
-                          lastCitationFocus.current = event.currentTarget;
-                          setEvidence(c);
-                        }}
-                        aria-label={`Citation ${c.marker}: ${c.source.title}`}
-                      >
-                        <span className="source-number">{c.marker}</span>
-                        <span>
-                          <strong>{c.source.title}</strong>
-                          <small>
-                            {c.passage.locator ||
-                              `Passage ${c.passage.ordinal}`}
-                          </small>
-                        </span>
-                        <span aria-hidden="true">↗</span>
-                      </button>
-                    ))}
-                  </section>
-                )}
-                <footer className="page-footer">
-                  Published knowledge, connected to its evidence.
-                </footer>
-              </article>
-            ) : (
-              <div className="empty-state">
-                <span className="empty-icon">▤</span>
-                <h1>
-                  {busy
-                    ? "Opening your wiki…"
-                    : current.slug
-                      ? "Page unavailable"
-                      : "A home for your knowledge"}
-                </h1>
-                <p>
-                  {current.slug
-                    ? "This page is not available in the selected publication. Choose a page from the sidebar."
-                    : "Published pages will appear here as your workspace grows."}
-                </p>
-              </div>
-            )}
+              ))}
           </main>
-          <aside className="context-panel" aria-label="Page context">
+          <aside
+            className="context-panel"
+            aria-label="Page context"
+            hidden={searching}
+          >
             <div className="context-title">ON THIS PAGE</div>
             {outline.length ? (
               outline.map((item, i) => (

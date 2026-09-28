@@ -30,11 +30,18 @@ class Knowledge(unittest.TestCase):
         ''')
         self.calls, self.byte_limit, self.row_limit = [], 1024 * 1024, 500
         self.http413 = False
+        self.search_response, self.search_requests = None, []
         patcher = patch.object(wc, 'must', side_effect=self.query)
         patcher.start()
         self.addCleanup(patcher.stop)
 
     def query(self, cfg, method, path, body):
+        if path == '/api/context/search':
+            self.assertEqual(method, 'POST')
+            self.search_requests.append(body)
+            if isinstance(self.search_response, Exception):
+                raise self.search_response
+            return self.search_response
         self.assertEqual((method, path), ('POST', '/api/context/query'))
         sql = body['sql']
         self.calls.append(sql)
@@ -62,7 +69,7 @@ class Knowledge(unittest.TestCase):
         return manifest
 
     def test_empty(self):
-        self.assertEqual(knowledge.search({}, 'anything'), {'publication': None, 'pages': []})
+        self.assertEqual(knowledge.search({}, 'anything'), {'publication': None, 'generation': None, 'pages': [], 'hasMore': False, 'nextOffset': None})
         self.assertEqual(knowledge.lint({})['findings'], [])
 
     def test_bounded_pages_and_large_manifest(self):
@@ -70,7 +77,8 @@ class Knowledge(unittest.TestCase):
         # The manifest itself cannot fit in one response, but no query returns it.
         self.byte_limit = 16000
         self.assertGreater(len(json.dumps(manifest)), self.byte_limit)
-        result = knowledge.search({}, 'Tuesday')
+        _, pages = knowledge.published({})
+        result = {'pages': pages}
         self.assertEqual(len(result['pages']), 601)
         self.assertEqual(len({page['id'] for page in result['pages']}), 601)
         self.assertLess(len(self.calls), 150)
@@ -88,7 +96,7 @@ class Knowledge(unittest.TestCase):
         self.fixture(1, body='x' * 3000)
         self.byte_limit = 1000
         with self.assertRaisesRegex(wc.Fail, 'truncated'):
-            knowledge.search({}, 'x')
+            knowledge.published({})
 
     def test_manifest_corruption(self):
         manifest = self.fixture()
@@ -148,9 +156,68 @@ class Knowledge(unittest.TestCase):
                 self.db.execute('INSERT INTO publications VALUES (?,2,?)', (ident(90001), '{}'))
             return result
         with patch.object(wc, 'must', side_effect=advancing):
-            result = knowledge.search({}, 'Title')
-        self.assertEqual(result['publication'], ident(90000))
-        self.assertEqual(len(result['pages']), 2)
+            publication, pages = knowledge.published({})
+        self.assertEqual(publication['id'], ident(90000))
+        self.assertEqual(len(pages), 2)
+
+
+    def ranked(self, ids, more=False):
+        return {'index': 'pages', 'scope': ident(90000), 'generation': 'generation-1',
+                'hits': [{'id': record_id, 'score': -10 + i, 'excerpt': '<script>literal</script>'}
+                         for i, record_id in enumerate(ids)], 'hasMore': more, 'truncated': more}
+
+    def test_search_preserves_rank_and_hydrates_only_selected_hits(self):
+        self.fixture(3)
+        self.search_response = self.ranked([ident(10003), ident(10001)], True)
+        result = knowledge.search({}, 'Title', limit=2)
+        self.assertEqual([p['id'] for p in result['pages']], [ident(10003), ident(10001)])
+        self.assertEqual(result['pages'][0]['excerpt'], '<script>literal</script>')
+        self.assertEqual(result['nextOffset'], 2)
+        self.assertEqual(self.search_requests[0]['scope'], ident(90000))
+        self.assertFalse(any('r.*' in sql for sql in self.calls))
+        self.search_response = self.ranked([ident(10002)])
+        tail = knowledge.search({}, 'Title', publication_id=result['publication'], limit=2,
+                                offset=2, generation=result['generation'])
+        self.assertIsNone(tail['nextOffset'])
+        self.assertEqual(self.search_requests[-1]['expectedGeneration'], 'generation-1')
+
+    def test_search_rejects_cross_publication_and_archived_hits(self):
+        self.fixture(2)
+        self.db.execute('UPDATE page_revisions SET archived=1 WHERE id=?', (ident(10002),))
+        for record_id in [ident(10002), ident(80000)]:
+            self.search_response = self.ranked([record_id])
+            with self.assertRaisesRegex(wc.Fail, 'absent from the selected publication'):
+                knowledge.search({}, 'Title')
+
+    def test_search_conflict_requires_explicit_restart(self):
+        self.fixture()
+        self.search_response = wc.Fail(4, 'HTTP 409')
+        with self.assertRaisesRegex(wc.Fail, 'Discard prior result pages') as error:
+            knowledge.search({}, 'Title', sequence=1, offset=2, generation='generation-1')
+        self.assertEqual(error.exception.code, 4)
+        self.assertEqual(len(self.search_requests), 1)
+
+    def test_invalid_search_and_continuations_do_not_send_requests(self):
+        for kwargs in [{'offset': 1}, {'offset': 1, 'generation': 'g'}, {'limit': 101},
+                       {'generation': 'bad\x00generation'}, {'sequence': -1}]:
+            with self.subTest(kwargs=kwargs), self.assertRaises(wc.Fail):
+                knowledge.search({}, 'Title', **kwargs)
+        for term in ['', ' ', 'a ' * 17, 'é' * 2049]:
+            with self.assertRaises(wc.Fail):
+                knowledge.search({}, term)
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.search_requests, [])
+
+    def test_invalid_search_response_fails_closed(self):
+        self.fixture(2)
+        valid = self.ranked([ident(10001)])
+        cases = [dict(valid, scope=ident(90001)), dict(valid, generation=''),
+                 dict(valid, hits=valid['hits'] * 2), dict(valid, hasMore=True),
+                 dict(valid, hits=[dict(valid['hits'][0], score=float('nan'))])]
+        for result in cases:
+            self.search_response = result
+            with self.subTest(result=result), self.assertRaises(wc.Fail):
+                knowledge.search({}, 'Title')
 
 
 if __name__ == '__main__':

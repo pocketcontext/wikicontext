@@ -1,4 +1,5 @@
 """Queries against committed knowledge, never against generated Markdown."""
+import math
 import re
 import wc
 
@@ -54,16 +55,29 @@ def publication_where(publication):
     return f"pub.id={literal(publication['id'])}"
 
 
-def published(cfg):
-    # Pin the identity only: the manifest may exceed the SQL response byte limit.
+def select_publication(cfg, publication_id=None, sequence=None):
+    if publication_id is not None and (not isinstance(publication_id, str) or not ID.fullmatch(publication_id)):
+        raise wc.Fail(2, 'Invalid publication ID')
+    if sequence is not None and (type(sequence) is not int or sequence < 1):
+        raise wc.Fail(2, 'Publication sequence must be positive')
+    if publication_id is not None and sequence is not None:
+        raise wc.Fail(2, 'Choose a publication ID or sequence, not both')
+    condition = (' WHERE id=' + literal(publication_id) if publication_id is not None else
+                 f' WHERE sequence={sequence}' if sequence is not None else '')
     result = rows(cfg, "SELECT id, sequence, CASE WHEN json_valid(manifest) "
                   "THEN json_type(manifest) ELSE 'invalid' END AS manifest_type "
-                  "FROM publications ORDER BY sequence DESC LIMIT 1")
+                  "FROM publications" + condition + " ORDER BY sequence DESC LIMIT 1")
     if not result:
-        return None, []
+        if publication_id is not None or sequence is not None:
+            raise wc.Fail(1, 'Publication not found')
+        return None
     publication = result[0]
     if publication.pop('manifest_type') != 'object':
         raise wc.Fail(1, 'Invalid publication manifest')
+    return publication
+
+
+def validate_manifest(cfg, publication):
     join, where = manifest_join(publication), publication_where(publication)
     # Validate every entry, including archived pages, before discarding any rows.
     # Exact page/revision pairing and duplicate-key checks avoid silent inner-join loss.
@@ -75,6 +89,16 @@ def published(cfg):
         + join + 'WHERE ' + where)[0]
     if validation['invalid'] or validation['total'] != validation['unique_keys']:
         raise wc.Fail(1, 'Invalid or incomplete publication manifest')
+    return validation
+
+
+def published(cfg):
+    # Pin only metadata: manifests and revision bodies are fetched in bounded SQL pages.
+    publication = select_publication(cfg)
+    if publication is None:
+        return None, []
+    validation = validate_manifest(cfg, publication)
+    join, where = manifest_join(publication), publication_where(publication)
     pages = list(batches(cfg, lambda after, limit:
         "SELECT r.*, p.slug, p.kind " + join + "WHERE " + where +
         f" AND r.archived=0 AND r.id>{literal(after)} ORDER BY r.id LIMIT {limit}"))
@@ -93,15 +117,63 @@ def relationships(cfg, publication, table, column):
         f" AND r.archived=0 AND rel.id>{literal(after)} ORDER BY rel.id LIMIT {limit}")
 
 
-def search(cfg, term):
-    publication, pages = published(cfg)
-    words = term.casefold().split()
-    matches = []
-    for page in pages:
-        content = '\n'.join(str(page[key]) for key in ('slug', 'title', 'summary', 'body')).casefold()
-        if all(word in content for word in words):
-            matches.append({key: page[key] for key in ('id', 'page', 'slug', 'title', 'summary')})
-    return {'publication': publication['id'] if publication else None, 'pages': sorted(matches, key=lambda p:p['slug'])}
+def search(cfg, term, *, publication_id=None, sequence=None, limit=20, offset=0, generation=None):
+    """One bounded ranked page; continuation must name the same publication and generation."""
+    if (not isinstance(term, str) or not term.strip() or len(term.encode('utf-8')) > 4096
+            or len(term.split()) > 16):
+        raise wc.Fail(2, 'Search requires 1–16 terms and at most 4096 UTF-8 bytes')
+    if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or not 0 <= offset <= 10000:
+        raise wc.Fail(2, 'Search limit must be 1–100 and offset 0–10000')
+    if generation is not None and (not isinstance(generation, str) or not generation
+                                  or len(generation.encode('utf-8')) > 128 or '\x00' in generation):
+        raise wc.Fail(2, 'Invalid search generation')
+    if offset and (not generation or (publication_id is None and sequence is None)):
+        raise wc.Fail(2, 'Continuation requires --publication (or --sequence) and --generation')
+    publication = select_publication(cfg, publication_id, sequence)
+    if publication is None:
+        return {'publication': None, 'generation': None, 'pages': [], 'hasMore': False, 'nextOffset': None}
+    validate_manifest(cfg, publication)
+    body = {'index': 'pages', 'query': term, 'scope': publication['id'], 'limit': limit, 'offset': offset}
+    if generation is not None:
+        body['expectedGeneration'] = generation
+    try:
+        result = wc.must(cfg, 'POST', '/api/context/search', body)
+    except wc.Fail as error:
+        if error.code == 4:
+            raise wc.Fail(4, 'Search index changed. Discard prior result pages and restart at offset 0 without --generation.') from None
+        raise
+    hits = result.get('hits')
+    returned_generation = result.get('generation')
+    if (result.get('index') != 'pages' or result.get('scope') != publication['id']
+            or not isinstance(returned_generation, str) or not returned_generation
+            or len(returned_generation.encode('utf-8')) > 128 or '\x00' in returned_generation
+            or (generation is not None and returned_generation != generation)
+            or type(result.get('hasMore')) is not bool or type(result.get('truncated')) is not bool
+            or result['hasMore'] != result['truncated']
+            or not isinstance(hits, list) or len(hits) > limit):
+        raise wc.Fail(1, 'Invalid scoped search response')
+    ids, ranks = [], []
+    for hit in hits:
+        if (not isinstance(hit, dict) or not isinstance(hit.get('id'), str) or not ID.fullmatch(hit['id'])
+                or type(hit.get('score')) not in (int, float) or not math.isfinite(hit['score'])
+                or not isinstance(hit.get('excerpt'), str)):
+            raise wc.Fail(1, 'Invalid search hit')
+        ids.append(hit['id'])
+        ranks.append((hit['score'], hit['id']))
+    if len(set(ids)) != len(ids) or ranks != sorted(ranks) or (result['hasMore'] and not hits):
+        raise wc.Fail(1, 'Invalid search ordering or continuation')
+    metadata = {}
+    if ids:
+        selected = ','.join(literal(record_id) for record_id in ids)
+        join, where = manifest_join(publication), publication_where(publication)
+        metadata = {row['id']: row for row in batches(cfg, lambda after, size:
+            'SELECT r.id, r.page, p.slug, p.kind, r.title, r.summary ' + join + 'WHERE ' + where +
+            f' AND r.archived=0 AND r.id IN ({selected}) AND r.id>{literal(after)} ORDER BY r.id LIMIT {size}')}
+        if set(metadata) != set(ids):
+            raise wc.Fail(1, 'Search hit is absent from the selected publication')
+    pages = [dict(metadata[hit['id']], score=hit['score'], excerpt=hit['excerpt']) for hit in hits]
+    return {'publication': publication['id'], 'generation': returned_generation, 'pages': pages,
+            'hasMore': result['hasMore'], 'nextOffset': offset + len(pages) if result['hasMore'] else None}
 
 
 def lint(cfg):
