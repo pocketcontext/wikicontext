@@ -97,6 +97,17 @@ def main():
         first=query('SELECT * FROM publications')[0]
         manifest=json.loads(first['manifest']) if isinstance(first['manifest'],str) else first['manifest']
         assert manifest=={p['id']:r['id']}
+        # Pin one publication: draft revisions never enter manifest-based diagnostics.
+        diagnostic_draft=run('diagnostic-draft')
+        revision(diagnostic_draft,p,r['id'],body='Unpublished synthetic body [needs verification].')
+        stats=query("""SELECT count(*) AS pages,
+          median(length(r.body)) AS median_body_characters,
+          percentile_cont(length(r.body), 0.95) AS p95_body_characters
+          FROM publications AS pub JOIN json_each(pub.manifest) AS selected
+          JOIN page_revisions AS r ON r.id=selected.value AND r.page=selected.key
+          WHERE pub.sequence=1 AND r.archived=false""")
+        assert stats==[{'pages':1,'median_body_characters':len(r['body']),
+                       'p95_body_characters':len(r['body'])}],stats
         # Closed run cannot gain revisions/links/citations or be republished.
         request('PATCH',path('ingestion_runs')+'/'+a['id'],{'expected_revision':a['revision'],'status':'staging'},token,400)
         request('POST',path('page_links'),{'page_revision':r['id'],'target':p['id']},token,400)

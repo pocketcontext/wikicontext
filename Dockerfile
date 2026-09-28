@@ -58,7 +58,7 @@ RUN set -eu; \
     test "$(git rev-parse HEAD)" = "${revision}"
 RUN go mod download && go mod verify
 # The flags of pocketcontext's Makefile, plus -trimpath and a stripped binary.
-RUN go build -trimpath -tags sqlite_math_functions -ldflags '-s -w' -o /out/pocketcontext ./cmd/pocketcontext \
+RUN go build -trimpath -tags sqlite_math_functions,sqlite_percentile,sqlite_fts5 -ldflags '-s -w' -o /out/pocketcontext ./cmd/pocketcontext \
     && /out/pocketcontext --version
 
 

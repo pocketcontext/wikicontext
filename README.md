@@ -15,6 +15,13 @@ make build
 /path/to/pinned/pocketcontext serve --dir ./pb_data --http 127.0.0.1:8090
 ```
 
+The pinned build includes `sqlite_math_functions,sqlite_percentile,sqlite_fts5`.
+Authenticated SQL supports `json_each`/`json_tree` and median/percentile aggregates.
+FTS5 is compiled in, but WikiContext does not configure the optional search endpoint;
+published-page search continues to use SQL and an immutable publication manifest.
+See the [publication-scoped FTS design](docs/fts-adoption.md) for the remaining
+server and application work.
+
 Keep data outside Git. Provision users through operator maintenance, or configure a separate Google Web client with `WIKICONTEXT_GOOGLE_CLIENT_ID`, `WIKICONTEXT_GOOGLE_CLIENT_SECRET` and `WIKICONTEXT_GOOGLE_WORKSPACE_DOMAIN`. Register `http://127.0.0.1:8765/callback` and the approved origin's `/api/oauth2-redirect`. Use ordinary user credentials for knowledge operations. Production runs at https://wiki.pocketcontext.com. See [release verification](DEPLOYMENT.md) and [deployment procedures](docs/deployment.md).
 
 ## Browser reader
@@ -78,6 +85,25 @@ The exporter writes `wiki/` and `raw/` under the destination. Numbered source fo
 
 See [data model](docs/data-model.md) and [skill workflows](skills/wikicontext/references/workflows.md) for synthesis, idempotency, queries, corrections and publication. Structural lint does not establish semantic correctness. The current search scans published page text through SQL and does not supply native FTS/vector search. Raw SQL queries must explicitly distinguish draft revisions from the published manifest.
 
+## SQL diagnostics
+
+For published-page body sizes, pin a publication sequence and expand its manifest:
+
+```sql
+SELECT count(*) AS pages,
+       median(length(r.body)) AS median_body_characters,
+       percentile_cont(length(r.body), 0.95) AS p95_body_characters
+FROM publications AS pub
+JOIN json_each(pub.manifest) AS selected
+JOIN page_revisions AS r ON r.id = selected.value AND r.page = selected.key
+WHERE pub.sequence = 1 AND r.archived = false;
+```
+
+Replace `1` with the selected publication sequence. This excludes drafts and
+archived pages and returns one aggregate row. The statistics describe character
+counts, not query latency or memory use; an empty publication returns NULL sizes.
+`percentile_cont` takes a fraction from 0 to 1; `percentile` takes 0 to 100.
+
 ## Validation
 
 Use synthetic isolated databases only. From this repository, with the pinned server built:
@@ -91,12 +117,14 @@ python3 tests/realtime_access.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/realtime_publication.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/oauth_integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/skill.py --binary /absolute/path/to/pinned/pocketcontext
+python3 tests/knowledge_integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/ingest_integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/export_integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/deploy.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/backup_integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/oauth.py
 python3 tests/client.py
+python3 tests/knowledge.py
 python3 tests/ingest.py
 python3 tests/exporter.py
 python3 tests/backup.py
@@ -123,7 +151,7 @@ The existing `wiki/` checkout has not been modified or migrated. Import original
 
 ## Infrastructure provenance
 
-Authentication and portable OAuth client adapted from RaiseContext `44f8f10537388f9a934a2bc1800d3df6a046c580`; revision/concurrency and realtime test patterns from TaskContext `5bb214ef32fcffa9a42bb1de2d13cfd4052dc80f`; protected originals, complete backups and container/deployment patterns from AccountContext `2b78c0f38680381376b0ce485312ff659037a13f`. WikiContext's domain schema and publication/export model are independent. Server pin: `a92b0de5e1b66b6d3b6135b90092d2d6da5f7cc8`.
+Authentication and portable OAuth client adapted from RaiseContext `44f8f10537388f9a934a2bc1800d3df6a046c580`; revision/concurrency and realtime test patterns from TaskContext `5bb214ef32fcffa9a42bb1de2d13cfd4052dc80f`; protected originals, complete backups and container/deployment patterns from AccountContext `2b78c0f38680381376b0ce485312ff659037a13f`. WikiContext's domain schema and publication/export model are independent. Server pin: `28337607721c3b671dfc6416a5f01ad40f5ffb00`.
 
 ## Request observability
 

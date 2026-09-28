@@ -126,8 +126,40 @@ async function allRows<T>(sql: string, initialSize = 100): Promise<T[]> {
 
 const summary = "r.id, r.page, p.slug, p.kind, r.title, r.summary";
 function published(publicationId: string): string {
-  // Read selected revisions inside SQL so a manifest larger than maxBytes remains usable.
-  return `FROM publications pub JOIN pages p ON 1=1 JOIN page_revisions r ON r.page=p.id AND r.id=json_extract(pub.manifest, '$.' || p.id) WHERE pub.id=${identity(publicationId)} AND r.archived=0`;
+  // Expand only the selected immutable manifest, rather than testing every page
+  // identity against it. Never download the manifest or select a revision by age.
+  return `FROM publications pub JOIN json_each(pub.manifest) m JOIN pages p ON p.id=m.key JOIN page_revisions r ON r.page=p.id AND r.id=m.value WHERE pub.id=${identity(publicationId)} AND m.type='text' AND r.archived=0`;
+}
+
+async function validatePublication(publicationId: string): Promise<boolean> {
+  // Validate before inner joins can discard broken entries. Publications and
+  // their revisions are immutable, so subsequent paged reads share this check.
+  const rows = await query<{
+    manifest_type: string;
+    total: number;
+    unique_keys: number;
+    invalid: number;
+  }>(
+    `SELECT json_type(pub.manifest) AS manifest_type, count(m.key) AS total,
+      count(DISTINCT m.key) AS unique_keys,
+      coalesce(sum(CASE WHEN m.key IS NULL THEN 0
+        WHEN length(m.key)!=15 OR m.key GLOB '*[^a-z0-9]*'
+        OR m.type!='text' OR length(m.value)!=15 OR m.value GLOB '*[^a-z0-9]*'
+        OR p.id IS NULL OR r.id IS NULL THEN 1 ELSE 0 END),0) AS invalid
+     FROM publications pub LEFT JOIN json_each(pub.manifest) m ON 1=1
+     LEFT JOIN pages p ON p.id=m.key
+     LEFT JOIN page_revisions r ON r.id=m.value AND r.page=p.id
+     WHERE pub.id=${identity(publicationId)} GROUP BY pub.id LIMIT 1`,
+  );
+  if (!rows.length) return false;
+  const check = rows[0];
+  if (
+    check.manifest_type !== "object" ||
+    check.invalid !== 0 ||
+    check.total !== check.unique_keys
+  )
+    throw new Error("This publication is incomplete or invalid");
+  return true;
 }
 
 export async function listPublications(
@@ -152,6 +184,7 @@ export async function getPublication(id: string): Promise<Publication | null> {
   );
 }
 export async function listPages(publicationId: string): Promise<PageSummary[]> {
+  if (!(await validatePublication(publicationId))) return [];
   return allRows(
     `SELECT ${summary} ${published(publicationId)} ORDER BY p.slug`,
   );
@@ -165,6 +198,7 @@ export async function searchPages(
   windowSize(offset, limit);
   if (term.length > 500)
     throw new Error("Search must be 500 characters or fewer");
+  if (!(await validatePublication(publicationId))) return [];
   const words = term.trim().split(/\s+/).filter(Boolean);
   const conditions = words
     .map(
@@ -200,6 +234,7 @@ export async function getPage(
 ): Promise<PageDetail | null> {
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug))
     throw new Error("Invalid page slug");
+  if (!(await validatePublication(publicationId))) return null;
   const page = (
     await query<PageSummary & { body: string }>(
       `SELECT ${summary}, r.body ${published(publicationId)} AND p.slug=${literal(slug)} LIMIT 1`,

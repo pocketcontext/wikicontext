@@ -44,7 +44,7 @@ jobs:
       - name: Build server
         working-directory: pocketcontext
         # The flags of pocketcontext's Makefile.
-        run: CGO_ENABLED=1 go build -tags sqlite_math_functions -o bin/pocketcontext ./cmd/pocketcontext
+        run: CGO_ENABLED=1 go build -tags sqlite_math_functions,sqlite_percentile,sqlite_fts5 -o bin/pocketcontext ./cmd/pocketcontext
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '24'
@@ -75,12 +75,14 @@ jobs:
           python3 wikicontext/tests/realtime_access.py --binary pocketcontext/bin/pocketcontext
           python3 wikicontext/tests/realtime_publication.py --binary pocketcontext/bin/pocketcontext
           python3 wikicontext/tests/publication_review.py --binary pocketcontext/bin/pocketcontext
+          python3 wikicontext/tests/knowledge_integration.py --binary pocketcontext/bin/pocketcontext
           python3 wikicontext/tests/ingest_integration.py --binary pocketcontext/bin/pocketcontext
           python3 wikicontext/tests/export_integration.py --binary pocketcontext/bin/pocketcontext
       - name: Test clients, exports and deployment preparation
         run: |
           python3 wikicontext/tests/oauth.py
           python3 wikicontext/tests/client.py
+          python3 wikicontext/tests/knowledge.py
           python3 wikicontext/tests/ingest.py
           python3 wikicontext/tests/exporter.py
       - name: Test opt-in trace isolation
