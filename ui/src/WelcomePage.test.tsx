@@ -1,0 +1,139 @@
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
+import { afterEach, expect, it } from "vitest";
+import WelcomePage from "./WelcomePage";
+import type { PageSummary, Publication } from "./types";
+
+const page = (slug: string, title: string, summary = ""): PageSummary => ({
+  id: `revision-${slug}`,
+  page: `page-${slug}`,
+  slug,
+  title,
+  summary,
+  kind: "concept",
+});
+const pages = [
+  page("colleague-onboarding", "Colleague onboarding"),
+  page("application-skills", "Application skills"),
+  page("login-guide", "Sign in guide"),
+  page("release-notes", "Release notes"),
+  page("unusual-topic", "A surprising subject", "A needle in the catalog"),
+];
+const publication: Publication = {
+  id: "publication0001",
+  sequence: 8,
+  home: "",
+  run: "run000000000001",
+  created: "2026-01-01",
+};
+afterEach(cleanup);
+
+it("indexes every supplied page, preserves historical links and only suggests existing guides", () => {
+  render(
+    <WelcomePage
+      pages={pages}
+      publication={publication}
+      pinned={publication.id}
+    />,
+  );
+  const index = within(
+    screen.getByRole("region", { name: "The complete page index" }),
+  );
+  expect(index.getAllByRole("link")).toHaveLength(pages.length);
+  for (const item of pages)
+    expect(index.getByRole("link", { name: item.title })).toHaveAttribute(
+      "href",
+      `#/page/${item.slug}?publication=${publication.id}`,
+    );
+  const onboarding = within(
+    screen.getByRole("region", { name: "New to the workspace?" }),
+  );
+  expect(
+    onboarding.getByRole("link", { name: "Open onboarding" }),
+  ).toHaveAttribute(
+    "href",
+    "#/page/colleague-onboarding?publication=publication0001",
+  );
+  expect(
+    onboarding.getByRole("link", { name: /Application skills/ }),
+  ).toBeVisible();
+  expect(onboarding.getByRole("link", { name: /Sign in guide/ })).toBeVisible();
+  expect(onboarding.queryByRole("link", { name: /Release notes/ })).toBeNull();
+});
+
+it("filters summaries and topics, focuses results with the keyboard and supports alphabetical mode", () => {
+  render(<WelcomePage pages={pages} publication={publication} />);
+  const search = screen.getByRole("searchbox", {
+    name: "Search the page index",
+  });
+  const index = within(
+    screen.getByRole("region", { name: "The complete page index" }),
+  );
+  fireEvent.change(search, { target: { value: "needle" } });
+  expect(index.getAllByRole("link")).toHaveLength(1);
+  expect(
+    index.getByRole("link", { name: "A surprising subject" }),
+  ).toHaveAttribute("href", "#/page/unusual-topic");
+  fireEvent.keyDown(search, { key: "Enter" });
+  expect(
+    screen.getByRole("heading", { name: "The complete page index" }),
+  ).toHaveFocus();
+  fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+  fireEvent.click(screen.getByRole("button", { name: /Handoffs & history/ }));
+  expect(index.getAllByRole("link")).toHaveLength(1);
+  expect(index.getByRole("link", { name: "Release notes" })).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+  fireEvent.click(screen.getByRole("button", { name: "A–Z" }));
+  expect(screen.getByRole("button", { name: "A–Z" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(index.getAllByRole("link")[0]).toHaveTextContent(
+    "A surprising subject",
+  );
+  fireEvent.change(search, { target: { value: "absent" } });
+  expect(index.queryAllByRole("link")).toHaveLength(0);
+  fireEvent.keyDown(search, { key: "Escape" });
+  expect(index.getAllByRole("link")).toHaveLength(5);
+});
+
+it("replaces the complete catalog on publication changes without retaining old links", () => {
+  const rendered = render(
+    <WelcomePage pages={pages} publication={publication} />,
+  );
+  rendered.rerender(
+    <WelcomePage
+      pages={[page("new", "New page")]}
+      publication={{ ...publication, sequence: 9 }}
+    />,
+  );
+  expect(
+    screen.queryByRole("link", { name: "Colleague onboarding" }),
+  ).toBeNull();
+  expect(screen.getByRole("link", { name: "New page" })).toBeVisible();
+  expect(screen.queryByRole("link", { name: "Open onboarding" })).toBeNull();
+  expect(screen.getByText("Live publication 9")).toBeVisible();
+});
+
+it("renders empty and untrusted catalog text safely", () => {
+  const rendered = render(<WelcomePage pages={[]} publication={null} />);
+  expect(
+    screen.getByText("No pages have been published in this view yet."),
+  ).toBeVisible();
+  expect(screen.queryAllByRole("link")).toHaveLength(0);
+  rendered.rerender(
+    <WelcomePage
+      pages={[page("safe", "<img src=x onerror=alert(1)>")]}
+      publication={publication}
+    />,
+  );
+  expect(document.querySelector("img")).toBeNull();
+  expect(
+    screen.getByRole("link", { name: "<img src=x onerror=alert(1)>" }),
+  ).toHaveAttribute("href", "#/page/safe");
+});

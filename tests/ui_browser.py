@@ -51,6 +51,9 @@ def seed(request):
         create('citations', {'page_revision': revision['id'], 'passage': passage['id'], 'marker': '1', 'note': 'Opening date.'})
         create('page_links', {'page_revision': revision['id'], 'target': telescope['id']})
         if number == 1:
+            onboarding = create('pages', {'slug': 'colleague-onboarding', 'kind': 'concept'})
+            create('page_revisions', {'run': run['id'], 'page': onboarding['id'], 'title': 'Colleague onboarding',
+                'summary': 'Synthetic new colleague setup guide.', 'body': 'Start with synthetic setup. [needs verification]'})
             for n in range(25):
                 item = create('pages', {'slug': f'starlight-{n:02d}', 'kind': 'concept'})
                 create('page_revisions', {'run': run['id'], 'page': item['id'], 'title': f'Starlight {n:02d}',
@@ -80,6 +83,15 @@ def seed(request):
             request('PATCH', '/api/collections/ingestion_runs/records/' + run['id'],
                 {'expected_revision': run['revision'], 'status': 'published'}, token)
             state['home'] = setting.get('home', '')
+            return request('GET', '/api/collections/publications/records?sort=-sequence&perPage=1', token=token)['items'][0]
+        if action == '/publish-new-page':
+            run = create('ingestion_runs', {'key': 'browser-directory-addition', 'status': 'staging',
+                'description': 'Synthetic welcome directory update'})
+            page = create('pages', {'slug': 'zenith-guide', 'kind': 'concept'})
+            create('page_revisions', {'run': run['id'], 'page': page['id'], 'title': 'Zenith guide',
+                'summary': 'A newly published directory entry.', 'body': 'Synthetic new page. [needs verification]'})
+            request('PATCH', '/api/collections/ingestion_runs/records/' + run['id'],
+                {'expected_revision': run['revision'], 'status': 'published'}, token)
             return request('GET', '/api/collections/publications/records?sort=-sequence&perPage=1', token=token)['items'][0]
         if action == '/other-session':
             return request('POST', '/api/collections/users/auth-with-password', {'identity': 'second@example.com', 'password': 'SyntheticUserPassword123!'})

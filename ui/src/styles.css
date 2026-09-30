@@ -120,6 +120,22 @@ select {
   color: var(--muted);
   font-size: 12px;
 }
+.welcome-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.welcome-nav:hover, .welcome-nav.selected {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
 .workspace-dot {
   width: 7px;
   height: 7px;
@@ -302,6 +318,12 @@ select {
   overflow: auto;
   scroll-behavior: smooth;
   outline: 0;
+}
+.reader.welcome-reader {
+  padding: 0 48px 30px;
+}
+@media (max-width: 700px) {
+  .reader.welcome-reader { padding: 0 22px 24px; }
 }
 .reader article,
 .search-view {

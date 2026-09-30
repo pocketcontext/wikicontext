@@ -36,7 +36,7 @@ offers an authenticated original-file download.
 
 The live view adopts complete publications and rechecks after reconnect or tab
 focus. Selecting a historical publication pins the view until you return to live.
-Each publication can select a home page. `/#/` opens that page and the sidebar marks it Home; unset or cleared choices use the first alphabetical slug. Historical views retain their home choice, and explicit page links stay stable.
+Each publication can select a home page. `/#/` opens that page and the sidebar marks it Home; unset or cleared choices open the built-in welcome index. Historical views retain their home choice, and explicit page links stay stable. The Welcome link (`/#/welcome`) always opens a searchable, topic-grouped index of every unarchived page in the selected publication, with an A–Z view and onboarding links drawn only from available pages. New or uncategorized pages remain visible under Other knowledge. Welcome search filters page titles, slugs and summaries; the sidebar retains full-text page search. No company page catalog is bundled into the reader.
 Unpublished revisions are never selected. Markdown supports tables, code, wiki
 links with aliases/heading anchors, citation markers and callouts. Raw HTML and
 embedded images are disabled. Obsidian plugins, block embeds, editing and two-way

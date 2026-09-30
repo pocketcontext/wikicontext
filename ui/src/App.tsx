@@ -9,6 +9,7 @@ import EvidenceBrowser, { evidenceHref } from "./EvidenceBrowser";
 import { api, pb, sessionGeneration } from "./api";
 import SearchResults, { searchHref } from "./SearchResults";
 import { homePageSlug } from "./home";
+import WelcomePage from "./WelcomePage";
 import type { Publication, PageSummary, PageDetail, Citation } from "./types";
 import { Markdown, pageHref } from "./Markdown";
 function safeDecode(value: string) {
@@ -29,7 +30,8 @@ function route() {
   const [path, query = ""] = location.hash.replace(/^#\/?/, "").split("?");
   const params = new URLSearchParams(query);
   return {
-    slug: /^(sources|passages)\//.test(path) ? "" : safeDecode(path.replace(/^page\//, "")),
+    slug: path === "welcome" || /^(sources|passages)\//.test(path) ? "" : safeDecode(path.replace(/^page\//, "")),
+    welcome: path === "welcome",
     collection: path.startsWith("sources/") ? "sources" as const : path.startsWith("passages/") ? "passages" as const : "pages" as const,
     record: /^(sources|passages)\//.test(path) ? safeDecode(path.split("/")[1] || "") : "",
     publication: params.get("publication") || "",
@@ -94,7 +96,7 @@ function Reader() {
       const next = route();
       const previous = routeSelection.current;
       if (
-        next.slug !== previous.slug ||
+        next.slug !== previous.slug || next.welcome !== previous.welcome ||
         next.publication !== previous.publication
       ) {
         generation.current++;
@@ -140,6 +142,8 @@ function Reader() {
           !event.altKey)
       ) {
         event.preventDefault();
+        const welcomeSearch = document.querySelector<HTMLInputElement>('.welcome-page input[type="search"]');
+        if (welcomeSearch) { setMenu(false); welcomeSearch.focus(); return; }
         setMenu(true);
         requestAnimationFrame(() =>
           document
@@ -188,7 +192,7 @@ function Reader() {
         return;
       }
       const pages = await api.listPages(publication.id);
-      const slug = current.slug || homePageSlug(publication, pages);
+      const slug = current.welcome ? undefined : current.slug || homePageSlug(publication, pages);
       const page = slug ? await api.getPage(publication.id, slug) : null;
       if (own === generation.current) {
         setPublications(history);
@@ -205,7 +209,7 @@ function Reader() {
     } finally {
       if (own === generation.current) setBusy(false);
     }
-  }, [current.slug, current.publication]);
+  }, [current.slug, current.welcome, current.publication]);
   useEffect(() => {
     if (!authenticated) return;
     void load();
@@ -247,7 +251,7 @@ function Reader() {
   }, [authenticated, load]);
   useEffect(() => {
     reader.current?.scrollTo?.(0, 0);
-  }, [current.slug, current.publication]);
+  }, [current.slug, current.welcome, current.publication]);
   useEffect(() => {
     if (current.heading && snapshot)
       document
@@ -286,7 +290,9 @@ function Reader() {
   };
   const navigatePublication = (id: string) => {
     location.hash = (
-      current.query
+      current.welcome && !current.query
+        ? `#/welcome${id === "live" ? "" : `?publication=${encodeURIComponent(id)}`}`
+        : current.query
         ? searchHref(
             current.query,
             id === "live" ? undefined : id,
@@ -339,8 +345,11 @@ function Reader() {
     (!current.slug || snapshot?.page?.slug === current.slug)
       ? snapshot?.page
       : null;
-  const pages = snapshot?.pages || [];
+  const matchingPublication = !pinned || snapshot?.publication.id === pinned;
+  const pages = matchingPublication ? snapshot?.pages || [] : [];
   const searching = current.collection === "pages" && Boolean(current.query.trim() && !current.slug);
+  const welcoming = current.collection === "pages" && !searching && !current.slug &&
+    (current.welcome || (matchingPublication && !snapshot?.publication.home));
   return (
     <div className="workspace">
       <a
@@ -366,6 +375,7 @@ function Reader() {
         <div className="workspace-label">
           <span className="workspace-dot" /> Shared workspace
         </div>
+        <a className={`welcome-nav ${welcoming ? "selected" : ""}`} href={`#/welcome${pinned ? `?publication=${encodeURIComponent(pinned)}` : ""}`} aria-current={welcoming ? "page" : undefined}>⌂ <span>Welcome</span></a>
         <label className="publication-control">Collection<select aria-label="Collection" value={current.collection} onChange={e => { location.hash = e.target.value === "pages" ? pageHref("", pinned) : evidenceHref(e.target.value as "sources" | "passages", "", "", current.publication); }}><option value="pages">Pages</option><option value="sources">Sources</option><option value="passages">Passages</option></select></label>
         <label className="search">
           <span aria-hidden="true">⌕</span>
@@ -405,8 +415,8 @@ function Reader() {
             <a
               key={p.id}
               href={pageHref(p.slug, pinned)}
-              className={p.slug === page?.slug ? "selected" : ""}
-              aria-current={p.slug === page?.slug ? "page" : undefined}
+              className={!welcoming && p.slug === page?.slug ? "selected" : ""}
+              aria-current={!welcoming && p.slug === page?.slug ? "page" : undefined}
             >
               <span className="page-icon" aria-hidden="true">
                 ▤
@@ -443,7 +453,7 @@ function Reader() {
           <div className="breadcrumb">
             Wiki <span>/</span>{" "}
             <strong>
-              {searching ? "Search" : page?.title || "Your knowledge"}
+              {searching ? "Search" : welcoming ? "Welcome" : page?.title || "Your knowledge"}
             </strong>
           </div>
           <div className="topbar-actions">
@@ -505,11 +515,11 @@ function Reader() {
             </button>
           </div>
         )}
-        <div className="reading-layout">
+        <div className={`reading-layout ${welcoming ? "welcome-layout" : ""}`}>
           <main
             id="reader"
             ref={reader}
-            className="reader"
+            className={`reader ${welcoming ? "welcome-reader" : ""}`}
             tabIndex={-1}
             aria-busy={busy}
           >
@@ -522,7 +532,8 @@ function Reader() {
               }
               epoch={searchEpoch}
             />
-            {current.collection === "pages" && !searching &&
+            {welcoming && matchingPublication && (!busy || snapshot) && <WelcomePage key={pinned || "live"} pages={pages} publication={snapshot?.publication || null} pinned={pinned} />}
+            {current.collection === "pages" && !searching && !welcoming &&
               (page ? (
                 <article>
                   {current.query && current.slug && (
@@ -606,7 +617,7 @@ function Reader() {
           <aside
             className="context-panel"
             aria-label="Page context"
-            hidden={searching || current.collection !== "pages"}
+            hidden={welcoming || searching || current.collection !== "pages"}
           >
             <div className="context-title">ON THIS PAGE</div>
             {outline.length ? (

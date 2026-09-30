@@ -13,8 +13,8 @@ test("home uses the stable page identity and selected publication", () => {
   expect(homePageSlug({ ...publication, home: "page-a" }, pages)).toBe("alpha");
 });
 
-test("unset or unavailable home falls back to alphabetical slug; empty publications have no home", () => {
-  expect(homePageSlug({ ...publication, home: "" }, pages)).toBe("alpha");
-  expect(homePageSlug({ ...publication, home: "missing" }, pages)).toBe("alpha");
+test("unset or unavailable home does not select an arbitrary page", () => {
+  expect(homePageSlug({ ...publication, home: "" }, pages)).toBeUndefined();
+  expect(homePageSlug({ ...publication, home: "missing" }, pages)).toBeUndefined();
   expect(homePageSlug(publication, [])).toBeUndefined();
 });

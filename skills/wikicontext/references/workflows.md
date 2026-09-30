@@ -41,8 +41,7 @@ A run may only change home without staging page revisions. The selected page mus
 be present and unarchived in the resulting manifest; archiving the current home
 requires choosing a replacement or clearing it in the same run.
 
-Use `stage-home RUN_ID --clear-home --expected-revision N` to restore alphabetical
-slug fallback. Runs without either choice carry the previous home forward. Historical
+Use `stage-home RUN_ID --clear-home --expected-revision N` to restore the welcome index. Runs without either choice carry the previous home forward. Historical
 home links such as `/#/?publication=PUBLICATION_ID` use that publication's choice;
 explicit page links continue to select their requested page.
 

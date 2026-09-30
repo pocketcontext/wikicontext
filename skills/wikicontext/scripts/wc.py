@@ -584,7 +584,7 @@ def parse(argv):
         publish.add_argument('--expected-revision', type=int, required=True)
         home = publish.add_mutually_exclusive_group(required=name == 'stage-home')
         home.add_argument('--home', help='page slug to select as home')
-        home.add_argument('--clear-home', action='store_true', help='restore alphabetical fallback')
+        home.add_argument('--clear-home', action='store_true', help='restore the welcome index')
         publish.add_argument('--home-base', help='expected current home page ID, or empty string; required for publish home flags')
     search = commands.add_parser('search', parents=[pretty], help='rank published revision text with bounded full-text search')
     search.add_argument('term', help='literal token terms; all terms must match')
