@@ -92,6 +92,23 @@ test("published reader: navigation, evidence, safe Markdown, live updates, histo
   await expect(page.locator("blockquote.passage")).toContainText("observatory opened in 2026");
   await page.goto("/" + sourceURL);
   await expect(page.getByRole("button", { name: "Download original", exact: true })).toBeVisible();
+  let releaseFileToken!: () => void;
+  const fileTokenGate = new Promise<void>(resolve => { releaseFileToken = resolve; });
+  await page.route("**/api/files/token", async route => {
+    const response = await route.fetch();
+    await fileTokenGate;
+    await route.fulfill({ response });
+  });
+  const pendingToken = page.waitForRequest("**/api/files/token");
+  await page.getByRole("button", { name: "Download original", exact: true }).click();
+  await pendingToken;
+  await page.goto("/#/page/observatory");
+  const staleDownload = page.waitForEvent("download", { timeout: 500 }).then(() => true, () => false);
+  releaseFileToken();
+  expect(await staleDownload).toBe(false);
+  await page.unroute("**/api/files/token");
+  await page.goto("/" + sourceURL);
+  await expect(page.getByRole("button", { name: "Download original", exact: true })).toBeVisible();
   await page.getByLabel("Collection", { exact: true }).selectOption("passages");
   await page.keyboard.press("Control+k");
   await expect(page.getByLabel("Search passages", { exact: true })).toBeFocused();

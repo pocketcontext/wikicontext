@@ -36,3 +36,7 @@ Report sources processed, pages published, publication sequence, unresolved cont
 ## Optional performance tracing
 
 When the user requests tracing, follow [request tracing](references/tracing.md). Use the shared ObserveContext wrapper; SQL text requires separate explicit opt-in. Ordinary commands remain unchanged.
+
+## Browser links
+
+When reporting a page or evidence record, include a reader link using the configured `WIKICONTEXT_URL` origin (remove its trailing slash). Live pages use `/#/page/<slug>`; fixed historical views append `?publication=<publication-id>`. Sources use `/#/sources/<source-id>` and passages use `/#/passages/<passage-id>`. Encode path components. Use actual queried identities, not inferred IDs. Source evidence is immutable; a live page can change with later publication. Links require the viewer's own authentication and never grant access. Link to the reader, never a protected file URL containing a temporary token.
