@@ -29,7 +29,7 @@ Open the application origin and sign in with your Workspace Google identity.
 Existing password accounts can use the secondary password form. The reader is
 read-only; agents continue to ingest, synthesize and publish through the skill.
 Search opens ranked published-page results with plain excerpts and Load more.
-The sidebar remains available for browsing. `/` or Ctrl/Cmd+K focuses search; query
+The sidebar collection selector browses Pages, Sources and Passages. Source/passage text filtering searches all shared evidence, including evidence not yet cited in a publication, with paginated URL state. Permanent `/#/sources/<id>` and `/#/passages/<id>` links support authenticated evidence navigation and protected original downloads; source pages link to their passages. Copy record/search links exclude temporary file tokens. Page controls copy live or publication-pinned historical links. The sidebar remains available for browsing. `/` or Ctrl/Cmd+K focuses search; query
 and publication are preserved in navigation. Wiki links, backlinks, an outline and
 source citations support navigation. A citation opens its original passage and
 offers an authenticated original-file download.
@@ -141,6 +141,11 @@ assets against a synthetic isolated database:
 (cd ui && pnpm exec playwright install chromium)
 python3 tests/ui_browser.py --binary /absolute/path/to/pinned/pocketcontext
 ```
+
+The 30 September 2026 navigation change passed every validation command above
+against the unchanged 91d7ef1 pin, reader typecheck, 32 unit tests, production
+build and both actual-server browser scenarios (including evidence permalinks,
+reload, collection search and keyboard navigation).
 
 CI runs reader type checks, unit tests and the production browser suite before
 image publication. Container smoke checks also verify the shell and bundled assets.

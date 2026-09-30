@@ -5,6 +5,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
+import EvidenceBrowser, { evidenceHref } from "./EvidenceBrowser";
 import { api, pb } from "./api";
 import SearchResults, { searchHref } from "./SearchResults";
 import type { Publication, PageSummary, PageDetail, Citation } from "./types";
@@ -27,8 +28,11 @@ function route() {
   const [path, query = ""] = location.hash.replace(/^#\/?/, "").split("?");
   const params = new URLSearchParams(query);
   return {
-    slug: safeDecode(path.replace(/^page\//, "")),
+    slug: /^(sources|passages)\//.test(path) ? "" : safeDecode(path.replace(/^page\//, "")),
+    collection: path.startsWith("sources/") ? "sources" as const : path.startsWith("passages/") ? "passages" as const : "pages" as const,
+    record: /^(sources|passages)\//.test(path) ? safeDecode(path.split("/")[1] || "") : "",
     publication: params.get("publication") || "",
+    offset: Math.min(100000, Math.max(0, parseInt(params.get("offset") || "0", 10) || 0)),
     heading: params.get("heading") || "",
     query: params.get("q") || "",
   };
@@ -59,6 +63,7 @@ export default function App() {
   >([]);
   const [evidence, setEvidence] = useState<Citation | null>(null);
   const [original, setOriginal] = useState("");
+  const [evidenceNavigation, setEvidenceNavigation] = useState<HTMLDivElement | null>(null);
   const [menu, setMenu] = useState(false);
   const [connected, setConnected] = useState(false);
   const [theme, setTheme] = useState(savedTheme);
@@ -130,7 +135,7 @@ export default function App() {
         setMenu(true);
         requestAnimationFrame(() =>
           document
-            .querySelector<HTMLInputElement>('input[aria-label="Search pages"]')
+            .querySelector<HTMLInputElement>('.sidebar input[type="search"]')
             ?.focus(),
         );
       }
@@ -326,7 +331,7 @@ export default function App() {
       ? snapshot?.page
       : null;
   const pages = snapshot?.pages || [];
-  const searching = Boolean(current.query.trim() && !current.slug);
+  const searching = current.collection === "pages" && Boolean(current.query.trim() && !current.slug);
   return (
     <div className="workspace">
       <a
@@ -352,10 +357,11 @@ export default function App() {
         <div className="workspace-label">
           <span className="workspace-dot" /> Shared workspace
         </div>
+        <label className="publication-control">Collection<select aria-label="Collection" value={current.collection} onChange={e => { location.hash = e.target.value === "pages" ? pageHref("", pinned) : evidenceHref(e.target.value as "sources" | "passages", "", "", current.publication); }}><option value="pages">Pages</option><option value="sources">Sources</option><option value="passages">Passages</option></select></label>
         <label className="search">
           <span aria-hidden="true">⌕</span>
           <input
-            aria-label="Search pages"
+            aria-label={current.collection === "pages" ? "Search pages" : `Search ${current.collection}`}
             type="search"
             placeholder="Search your knowledge…"
             value={search}
@@ -363,7 +369,7 @@ export default function App() {
             onChange={(e) => {
               const value = e.target.value;
               setSearch(value);
-              const href = value.trim()
+              const href = current.collection !== "pages" ? evidenceHref(current.collection, current.record, value, current.publication) : value.trim()
                 ? searchHref(value, current.publication || undefined)
                 : pageHref("", current.publication || undefined);
               history.replaceState(null, "", href);
@@ -381,11 +387,12 @@ export default function App() {
           <kbd>/</kbd>
         </label>
         <div className="nav-label">
-          PAGES
-          <span>{pages.length}</span>
+          {current.collection.toUpperCase()}
+          {current.collection === "pages" && <span>{pages.length}</span>}
         </div>
-        <nav className="page-list" aria-label="Pages">
-          {pages.map((p) => (
+        <div ref={setEvidenceNavigation} />
+        <nav className="page-list" aria-label="Pages" hidden={current.collection !== "pages"}>
+          {(current.collection === "pages" ? pages : []).map((p) => (
             <a
               key={p.id}
               href={pageHref(p.slug, pinned)}
@@ -496,6 +503,7 @@ export default function App() {
             tabIndex={-1}
             aria-busy={busy}
           >
+            {current.collection !== "pages" && <EvidenceBrowser collection={current.collection} id={current.record} term={current.query} publication={current.publication} offset={current.offset} navigation={evidenceNavigation} />}
             <SearchResults
               publication={snapshot?.publication.id || lastPublication.current}
               query={current.query}
@@ -504,7 +512,7 @@ export default function App() {
               }
               epoch={searchEpoch}
             />
-            {!searching &&
+            {current.collection === "pages" && !searching &&
               (page ? (
                 <article>
                   {current.query && current.slug && (
@@ -523,6 +531,8 @@ export default function App() {
                     </span>
                   </div>
                   <h1 className="page-title">{page.title}</h1>
+                  <button onClick={() => void navigator.clipboard.writeText(new URL(pageHref(page.slug), location.href).href).catch(() => setError("Unable to copy link"))}>Copy live link</button>{" "}
+                  <button onClick={() => void navigator.clipboard.writeText(new URL(pageHref(page.slug, snapshot?.publication.id), location.href).href).catch(() => setError("Unable to copy link"))}>Copy historical link</button>
                   {page.summary && (
                     <p className="page-summary">{page.summary}</p>
                   )}
@@ -586,7 +596,7 @@ export default function App() {
           <aside
             className="context-panel"
             aria-label="Page context"
-            hidden={searching}
+            hidden={searching || current.collection !== "pages"}
           >
             <div className="context-title">ON THIS PAGE</div>
             {outline.length ? (
@@ -696,6 +706,7 @@ export default function App() {
                 `Passage ${evidence.passage.ordinal}`}
             </p>
             <blockquote className="passage">{evidence.passage.body}</blockquote>
+            <p><a href={evidenceHref("passages", evidence.passage.id)}>Open passage</a> · <a href={evidenceHref("sources", evidence.source.id)}>Open source</a></p>
             {evidence.note && <p>{evidence.note}</p>}
             <dl>
               <dt>Original</dt>

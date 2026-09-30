@@ -56,6 +56,8 @@ test("published reader: navigation, evidence, safe Markdown, live updates, histo
       { exact: false },
     ),
   ).toBeVisible();
+  const passageURL = await page.getByRole("link", { name: "Open passage", exact: true }).getAttribute("href");
+  const sourceURL = await page.getByRole("link", { name: "Open source", exact: true }).getAttribute("href");
   const originalLink = page.getByRole("link", { name: /Open original/ });
   await expect(originalLink).toBeVisible();
   const originalResponse = await request.get(
@@ -83,6 +85,20 @@ test("published reader: navigation, evidence, safe Markdown, live updates, histo
   await expect(
     page.getByRole("button", { name: "Citation 1", exact: true }),
   ).toBeFocused();
+  await page.goto("/" + passageURL);
+  await expect(page.getByRole("heading", { name: "Passages", exact: true })).toBeVisible();
+  await expect(page.locator("blockquote.passage")).toContainText("observatory opened in 2026");
+  await page.reload();
+  await expect(page.locator("blockquote.passage")).toContainText("observatory opened in 2026");
+  await page.goto("/" + sourceURL);
+  await expect(page.getByRole("button", { name: "Download original", exact: true })).toBeVisible();
+  await page.getByLabel("Collection", { exact: true }).selectOption("passages");
+  await page.keyboard.press("Control+k");
+  await expect(page.getByLabel("Search passages", { exact: true })).toBeFocused();
+  await page.getByLabel("Search passages", { exact: true }).fill("does-not-exist");
+  await expect(page.getByText("No matches.", { exact: true })).toBeVisible();
+  await page.goto("/#/page/observatory");
+  await expect(page.getByRole("button", { name: "Copy historical link", exact: true })).toBeVisible();
   await page.getByRole("link", { name: "the telescope", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Telescope", exact: true }),
