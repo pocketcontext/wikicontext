@@ -459,7 +459,7 @@ def run(args):
     cfg = config()
     if args.command == 'ingest':
         import ingest
-        say(dump(ingest.ingest(cfg, args.path, title=args.title, version=args.version), args.pretty), sys.stdout)
+        say(dump(ingest.ingest(cfg, args.path, title=args.title, version=args.version, audio_storage=args.audio_storage), args.pretty), sys.stdout)
         return 0
     if args.command == 'export-obsidian':
         import exporter
@@ -570,10 +570,12 @@ def parse(argv):
     add('batch', 'send up to 20 writes as one transaction', ('json', 'JSON array of {"method","url","body"}, or -'))
     add('newid', 'print a new 15-character record id for use inside a batch')
     add('logout', 'remove the cached token')
-    source = commands.add_parser('ingest', parents=[pretty], help='upload an immutable original and extract evidence passages')
+    source = commands.add_parser('ingest', parents=[pretty], help='store a source (audio normalized by default) and extract evidence passages')
     source.add_argument('path')
     source.add_argument('--title')
     source.add_argument('--version', default='v1')
+    source.add_argument('--audio-storage', choices=('normalized', 'original'), default='normalized',
+                        help='store normalized Opus audio (default), or preserve input bytes')
     export = commands.add_parser('export-obsidian', parents=[pretty], help='render a pinned publication and originals into a vault root')
     export.add_argument('destination')
     export.add_argument('--sequence', type=int)

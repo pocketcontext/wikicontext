@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import shutil
+import wave
 import urllib.error
 import urllib.request
 from unittest.mock import patch
@@ -68,7 +70,42 @@ def main():
             real_must(cfg, 'PATCH', wc.records('ingestion_runs', run['id']), {'expected_revision': 1, 'status': 'published'})
             assert len(ingest.rows(cfg, 'SELECT id FROM publications')) == 1
             assert source.read_bytes() == content
-    print('PASS: real upload/hash, duplicate and interrupted resume, protected original, cited publication')
+            if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
+                raise AssertionError('FFmpeg and ffprobe are required for normalized-audio integration coverage')
+            audio = Path(folder) / 'synthetic-meeting.wav'
+            with wave.open(str(audio), 'wb') as fixture:
+                fixture.setnchannels(2)
+                fixture.setsampwidth(2)
+                fixture.setframerate(48000)
+                fixture.writeframes(b'\0' * 48000 * 2 * 2)
+            original_audio = audio.read_bytes()
+            sent = []
+            def provider(audio_path, original_duration):
+                sent.append(audio_path.read_bytes())
+                if len(sent) == 1:
+                    raise wc.Fail(1, 'synthetic provider failure')
+                return [{'locator': 'seconds 0-1', 'body': 'Synthetic meeting transcript.'}]
+            with patch.object(ingest, 'send_transcription', side_effect=provider), \
+                    patch.dict(os.environ, {'WIKICONTEXT_GROQ_API_KEY': 'synthetic-key'}):
+                try:
+                    ingest.ingest(cfg, audio)
+                except wc.Fail as error:
+                    assert str(error) == 'synthetic provider failure', str(error)
+                else:
+                    raise AssertionError('Expected synthetic provider failure')
+                normalized = ingest.ingest(cfg, audio)
+                assert normalized == ingest.ingest(cfg, audio)
+            assert len(sent) == 2 and sent[0] == sent[1]
+            assert audio.read_bytes() == original_audio
+            stored_audio = ingest.rows(cfg, "SELECT id, original, original_name, sha256 FROM sources WHERE id = '%s'" % normalized['source'])[0]
+            assert stored_audio['original_name'] == 'synthetic-meeting.normalized.ogg'
+            assert stored_audio['sha256'] == hashlib.sha256(sent[0]).hexdigest()
+            assert len(ingest.rows(cfg, 'SELECT id FROM sources')) == 2
+            file_token = request('POST', '/api/files/token', {}, token)['token']
+            audio_file_path = '/api/files/sources/' + stored_audio['id'] + '/' + stored_audio['original']
+            with urllib.request.urlopen(request.base_url + audio_file_path + '?token=' + file_token) as response:
+                assert response.read() == sent[0]
+    print('PASS: real upload/hash, duplicate and interrupted resume, protected original, cited publication, normalized audio and provider recovery')
 
 
 if __name__ == '__main__':

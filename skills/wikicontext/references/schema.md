@@ -4,8 +4,8 @@ Use `wc.py schema` for live SQL columns and `wc.py check` for differences from `
 
 | Collection | Content and invariants |
 | --- | --- |
-| sources | `title`, `original_name`, `media_type`, `source_date`, `sha256`, optional `supersedes`, protected required `original`. Immutable. Server computes unique SHA-256 from stored bytes. |
-| renditions | `source`, `kind`, `processor`, `version_label`, `notes`. Immutable extraction provenance. Unique source/kind/version. Client notes contain extraction count/hash for retry checks. |
+| sources | `title`, `original_name`, `media_type`, `source_date`, `sha256`, optional `supersedes`, protected required `original`. Immutable. Server computes unique SHA-256 from stored bytes. Default audio sources contain normalized Opus `.ogg` bytes, not the input recording bytes. |
+| renditions | `source`, `kind`, `processor`, `version_label`, `notes`. Immutable extraction provenance. Unique source/kind/version. Client notes contain extraction count/hash for retry checks. Default normalized audio notes also contain input filename/hash, conversion settings and converter version; the stored Ogg already embeds the input hash, profile and converter version before transcription. |
 | passages | `rendition`, positive `ordinal`, `locator`, `body` (30,000 characters maximum). Immutable, unique rendition/ordinal. |
 | ingestion_runs | Unique `key`, `status` (`staging`, `published`, `cancelled`), `description`, `sources` (up to 100), `issue`, optional `home` page ID, `home_base` expected previous home page ID, and `clear_home`. Home and clear are mutually exclusive; empty home with clear false carries the previous choice. New runs must be staging. Only staging runs can change. |
 | pages | Stable `slug`, `kind` (`summary`, `concept`, `entity`, `transcript`, `answer`, `legacy`). Immutable identities; slug uses lowercase ASCII words and hyphens. `index` and `log` are reserved. |

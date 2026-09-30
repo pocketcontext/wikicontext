@@ -1,4 +1,5 @@
-"""Preserve originals and ingest addressable evidence; synthesis belongs to the skill."""
+"""Store immutable sources and ingest evidence; synthesis belongs to the skill."""
+import fcntl
 import hashlib
 import json
 import math
@@ -17,6 +18,8 @@ import wc
 AUDIO = {'.mp3', '.m4a', '.wav', '.flac', '.ogg', '.webm', '.mp4', '.mpeg', '.mpga', '.opus'}
 TEXT = {'.txt', '.md', '.markdown', '.csv', '.json', '.rst', '.log'}
 MAX_SOURCE = 100 * 1024 * 1024
+MAX_AUDIO = 25_000_000
+AUDIO_PROFILE = 'mono-16khz-16kbps-opus-v1'
 
 
 def literal(value):
@@ -68,43 +71,135 @@ def upload_source(cfg, path, content, digest, title):
 
 def command(args):
     if not shutil.which(args[0]):
-        raise wc.Fail(2, f'{args[0]} is required for this source type; original remains stored for retry.')
+        raise wc.Fail(2, f'{args[0]} is required for this source type; local input is unchanged.')
     try:
         return subprocess.run(args, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=600).stdout
     except (OSError, subprocess.SubprocessError):
-        raise wc.Fail(1, f'{args[0]} failed; original remains stored for retry.') from None
+        raise wc.Fail(1, f'{args[0]} failed; local input is unchanged.') from None
 
 
 def duration(path):
+    # Match the stream selected by convert_audio; container duration may include
+    # longer video or other audio tracks. Some containers (notably WebM) omit
+    # stream duration, so count decoded audio time with timestamps reset instead.
+    value = command(['ffprobe', '-v', 'error', '-select_streams', 'a:0',
+                     '-show_entries', 'stream=duration', '-of',
+                     'default=noprint_wrappers=1:nokey=1', str(path)]).strip()
     try:
-        value = float(command(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', str(path)]))
-        if not math.isfinite(value) or value <= 0:
-            raise ValueError()
-        return value
+        seconds = float(value)
     except ValueError:
-        raise wc.Fail(1, 'Cannot verify audio duration; no audio sent to Groq.') from None
+        progress = command(['ffmpeg', '-nostdin', '-v', 'error', '-i', str(path),
+                            '-map', '0:a:0', '-vn', '-af', 'asetpts=N/SR/TB',
+                            '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le',
+                            '-f', 'null', '-nostats', '-progress', 'pipe:1', '-'])
+        # The null muxer counts samples without retaining decoded recordings on
+        # disk or in memory. The final progress block reports the complete time.
+        values = [line.partition(b'=')[2] for line in progress.splitlines()
+                  if line.startswith(b'out_time_us=')]
+        try:
+            seconds = float(values[-1]) / 1_000_000
+        except (ValueError, IndexError):
+            raise wc.Fail(1, 'Cannot verify audio duration; no audio sent to Groq.') from None
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise wc.Fail(1, 'Cannot verify audio duration; no audio sent to Groq.')
+    return seconds
 
 
-def transcribe(path):
-    key = wc.hide(os.environ.get('WIKICONTEXT_GROQ_API_KEY'))
-    if not key:
-        raise wc.Fail(2, 'Set WIKICONTEXT_GROQ_API_KEY to transcribe audio; original remains stored.')
+def convert_audio(path, derivative, metadata=None):
+    original_duration = duration(path)
+    args = ['ffmpeg', '-nostdin', '-v', 'error', '-fflags', '+bitexact', '-i', str(path),
+            '-map', '0:a:0', '-vn', '-map_metadata', '-1', '-af', 'asetpts=N/SR/TB',
+            '-ac', '1', '-ar', '16000',
+            '-c:a', 'libopus', '-b:a', '16k', '-flags:a', '+bitexact', '-fflags', '+bitexact']
+    for key, value in (metadata or {}).items():
+        args.extend(['-metadata', key + '=' + str(value)])
+    command([*args, str(derivative)])
+    if abs(duration(derivative) - original_duration) > 1:
+        raise wc.Fail(1, 'Normalized audio duration differs by more than one second; no normalized audio sent. Any previously uploaded source remains stored.')
+    if not 0 < derivative.stat().st_size <= MAX_AUDIO:
+        raise wc.Fail(2, 'Normalized audio exceeds the 25 MB limit or is empty; no normalized audio sent. Any previously uploaded source remains stored. Supply approved split sources.')
+    return original_duration
+
+
+def prepare_audio(cfg, path):
+    """Snapshot large inputs, and retain exact normalized bytes for safe retries."""
+    base = Path(os.environ.get('XDG_CACHE_HOME') or Path.home() / '.cache') / 'wikicontext' / 'audio'
+    base.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(base, 0o700)
+    with tempfile.TemporaryDirectory(prefix='input-', dir=base) as folder:
+        snapshot = Path(folder) / ('input' + path.suffix.lower())
+        digest = hashlib.sha256()
+        with path.open('rb') as source, snapshot.open('wb') as target:
+            os.chmod(snapshot, 0o600)
+            for block in iter(lambda: source.read(1024 * 1024), b''):
+                digest.update(block)
+                target.write(block)
+        input_sha = digest.hexdigest()
+        with snapshot.open('rb') as source:
+            head = source.read(100)
+        if not head or head.startswith(b'version https://git-lfs.github.com/spec/v1\n'):
+            raise wc.Fail(2, 'Source is empty or a Git LFS pointer; retrieve actual source bytes first.')
+        key = hashlib.sha256((cfg['url'] + '\n' + cfg['email'] + '\n' + input_sha + '\n' + AUDIO_PROFILE).encode()).hexdigest()
+        cached = base / key
+        with (base / (key + '.lock')).open('a+b') as lock:
+            os.chmod(lock.name, 0o600)
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            if cached.exists():
+                try:
+                    provenance = json.loads((cached / 'provenance.json').read_text())
+                    content = (cached / 'audio.ogg').read_bytes()
+                    if (provenance['input_sha256'] != input_sha or provenance['profile'] != AUDIO_PROFILE
+                            or provenance['stored_sha256'] != hashlib.sha256(content).hexdigest()
+                            or not 0 < len(content) <= MAX_AUDIO):
+                        raise ValueError()
+                except (OSError, ValueError, KeyError, TypeError):
+                    raise wc.Fail(1, 'Normalized audio cache is invalid; investigate before retrying.') from None
+                return content, provenance
+            converter = command(['ffmpeg', '-version']).decode('utf-8', errors='replace').splitlines()[0]
+            provenance = {'input_name': path.name, 'input_sha256': input_sha, 'profile': AUDIO_PROFILE,
+                          'converter': converter, 'storage': 'normalized', 'channels': 1,
+                          'sample_rate': 16000, 'bitrate': 16000, 'codec': 'opus'}
+            with tempfile.TemporaryDirectory(prefix='conversion-', dir=base) as staging:
+                derivative = Path(staging) / 'audio.ogg'
+                provenance['duration'] = convert_audio(snapshot, derivative, {
+                    'wikicontext_input_sha256': input_sha, 'wikicontext_audio_profile': AUDIO_PROFILE,
+                    'wikicontext_converter': converter})
+                os.chmod(derivative, 0o600)
+                content = derivative.read_bytes()
+                provenance['stored_sha256'] = hashlib.sha256(content).hexdigest()
+                metadata = Path(staging) / 'provenance.json'
+                metadata.write_text(json.dumps(provenance, sort_keys=True))
+                os.chmod(metadata, 0o600)
+                # Publish the complete cache together. The lock serializes concurrent retries.
+                os.rename(staging, cached)
+            return content, provenance
+
+
+def transcribe(path, normalized=False):
+    if not wc.hide(os.environ.get('WIKICONTEXT_GROQ_API_KEY')):
+        raise wc.Fail(2, 'Set WIKICONTEXT_GROQ_API_KEY to transcribe audio; uploaded source remains stored.')
+    if normalized:
+        return send_transcription(path, duration(path))
     with tempfile.TemporaryDirectory(prefix='wikicontext-audio-') as folder:
         derivative = Path(folder) / 'audio.ogg'
-        original_duration = duration(path)
-        command(['ffmpeg', '-nostdin', '-v', 'error', '-i', str(path), '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'libopus', '-b:a', '16k', str(derivative)])
-        if abs(duration(derivative) - original_duration) > 1:
-            raise wc.Fail(1, 'Derivative duration differs by more than one second; no audio sent to Groq.')
-        if derivative.stat().st_size > 25_000_000:
-            raise wc.Fail(2, 'Audio derivative exceeds conservative 25 MB Groq limit; no audio sent. Supply approved split sources or a separately extracted rendition.')
-        body, media = multipart({'model': 'whisper-large-v3-turbo', 'response_format': 'verbose_json', 'timestamp_granularities[]': 'segment'}, 'file', 'audio.ogg', derivative.read_bytes(), 'audio/ogg')
-        request = urllib.request.Request('https://api.groq.com/openai/v1/audio/transcriptions', data=body,
-                                        headers={'Authorization': 'Bearer ' + key, 'Content-Type': media}, method='POST')
-        try:
-            with wc.opener.open(request, timeout=600) as response:
-                result = json.load(response)
-        except (OSError, ValueError):
-            raise wc.Fail(1, 'Groq transcription failed; original remains stored. Retry after checking provider availability and credentials.') from None
+        original_duration = convert_audio(path, derivative)
+        return send_transcription(derivative, original_duration)
+
+
+def send_transcription(path, original_duration):
+    key = wc.hide(os.environ.get('WIKICONTEXT_GROQ_API_KEY'))
+    if not key:
+        raise wc.Fail(2, 'Set WIKICONTEXT_GROQ_API_KEY to transcribe audio; uploaded source remains stored.')
+    if not 0 < path.stat().st_size <= MAX_AUDIO:
+        raise wc.Fail(2, 'Transcription audio must be nonempty and no larger than 25 MB.')
+    body, media = multipart({'model': 'whisper-large-v3-turbo', 'response_format': 'verbose_json', 'timestamp_granularities[]': 'segment'}, 'file', 'audio.ogg', path.read_bytes(), 'audio/ogg')
+    request = urllib.request.Request('https://api.groq.com/openai/v1/audio/transcriptions', data=body,
+                                    headers={'Authorization': 'Bearer ' + key, 'Content-Type': media}, method='POST')
+    try:
+        with wc.opener.open(request, timeout=600) as response:
+            result = json.load(response)
+    except (OSError, ValueError):
+        raise wc.Fail(1, 'Groq transcription failed; uploaded source remains stored. Retry after checking provider availability and credentials.') from None
     segments = result.get('segments') if isinstance(result, dict) else None
     if not isinstance(segments, list) or not segments:
         raise wc.Fail(1, 'Groq returned no timestamped segments; original remains stored.')
@@ -125,7 +220,7 @@ def chunks(text, locator):
             for offset in range(0, len(text), 24000) if text[offset:offset + 24000].strip()]
 
 
-def extract(path, content):
+def extract(path, content, normalized=False):
     suffix = path.suffix.lower()
     if suffix in TEXT:
         try:
@@ -139,17 +234,28 @@ def extract(path, content):
             passages.extend(chunks(page, f'page {number}'))
         return 'text', 'pdftotext / wikicontext-1', passages
     if suffix in AUDIO:
-        return 'transcript', 'groq/whisper-large-v3-turbo / wikicontext-1', transcribe(path)
+        return 'transcript', 'groq/whisper-large-v3-turbo / wikicontext-1', transcribe(path, normalized=normalized)
     raise wc.Fail(2, f'Unsupported source extension {suffix or "(none)"}; original stored, extraction incomplete. Supply a supported source or explicitly prepare a rendition.')
 
 
-def ingest(cfg, path, title=None, version='v1'):
+def ingest(cfg, path, title=None, version='v1', audio_storage='normalized'):
     path = Path(path).resolve()
     if not version or len(version) > 100:
         raise wc.Fail(2, 'Rendition version must contain 1–100 characters.')
-    if not path.is_file() or path.stat().st_size > MAX_SOURCE:
-        raise wc.Fail(2, 'Source must be a regular file no larger than 100 MiB.')
-    content = path.read_bytes()
+    if audio_storage not in ('normalized', 'original'):
+        raise wc.Fail(2, 'Audio storage must be normalized or original.')
+    if not path.is_file():
+        raise wc.Fail(2, 'Source must be a regular file.')
+    normalized = path.suffix.lower() in AUDIO and audio_storage == 'normalized'
+    provenance = None
+    if normalized:
+        content, provenance = prepare_audio(cfg, path)
+        title = title or path.stem
+        path = path.with_name(path.stem + '.normalized.ogg')
+    else:
+        if path.stat().st_size > MAX_SOURCE:
+            raise wc.Fail(2, 'Source must be no larger than 100 MiB; audio can use --audio-storage normalized.')
+        content = path.read_bytes()
     if len(content) > MAX_SOURCE:
         raise wc.Fail(2, 'Source exceeds 100 MiB; no upload attempted.')
     if not content or content.startswith(b'version https://git-lfs.github.com/spec/v1\n'):
@@ -187,14 +293,17 @@ def ingest(cfg, path, title=None, version='v1'):
         with tempfile.TemporaryDirectory(prefix='wikicontext-source-') as folder:
             snapshot = Path(folder) / ('source' + path.suffix.lower())
             snapshot.write_bytes(content)
-            kind, processor, passages = extract(snapshot, content)
+            kind, processor, passages = extract(snapshot, content, normalized=normalized)
         if not passages:
             raise wc.Fail(1, 'Extraction returned no text (scanned PDFs require OCR); original remains stored.')
         with tempfile.NamedTemporaryFile(mode='w', dir=base, delete=False) as handle:
             os.fchmod(handle.fileno(), 0o600)
             json.dump([kind, processor, passages], handle, ensure_ascii=False)
         os.replace(handle.name, cache)
-    manifest = json.dumps({'passages': len(passages), 'sha256': hashlib.sha256(json.dumps(passages, sort_keys=True).encode()).hexdigest()}, sort_keys=True)
+    manifest_data = {'passages': len(passages), 'sha256': hashlib.sha256(json.dumps(passages, sort_keys=True).encode()).hexdigest()}
+    if provenance:
+        manifest_data['audio'] = provenance
+    manifest = json.dumps(manifest_data, sort_keys=True)
     query = 'SELECT id, notes FROM renditions WHERE source = ' + literal(source['id']) + ' AND kind = ' + literal(kind) + ' AND version_label = ' + literal(version) + ' LIMIT 1'
     existing = rows(cfg, query)
     if not existing:
@@ -208,7 +317,18 @@ def ingest(cfg, path, title=None, version='v1'):
     else:
         rendition = existing[0]
     if rendition['notes'] != manifest:
-        raise wc.Fail(4, 'Existing rendition has different extracted content. Preserve it and select a new --version.')
+        # The same input may be renamed before a retry on another machine. Keep
+        # its first recorded name without treating that label as evidence identity.
+        try:
+            previous_manifest = json.loads(rendition['notes'])
+            expected_manifest = json.loads(manifest)
+            if provenance and isinstance(previous_manifest.get('audio'), dict):
+                expected_manifest['audio']['input_name'] = previous_manifest['audio']['input_name']
+            compatible = previous_manifest == expected_manifest
+        except (ValueError, KeyError, TypeError, AttributeError):
+            compatible = False
+        if not compatible:
+            raise wc.Fail(4, 'Existing rendition has different extracted content. Preserve it and select a new --version.')
     for ordinal, passage in enumerate(passages, 1):
         query = 'SELECT id, locator, body FROM passages WHERE rendition = ' + literal(rendition['id']) + f' AND ordinal = {ordinal} LIMIT 1'
         previous = rows(cfg, query)

@@ -10,6 +10,15 @@ python3 scripts/wc.py sql "SELECT id, sequence, manifest FROM publications ORDER
 python3 scripts/wc.py sql "SELECT id, ordinal, locator, body FROM passages WHERE rendition = 'RENDITION_ID_15' ORDER BY ordinal LIMIT 10 OFFSET 0"
 ```
 
+Audio normalization is the default; preserving the input recording on the server is optional:
+
+```sh
+python3 scripts/wc.py ingest /path/to/meeting.m4a --title 'Meeting recording'
+python3 scripts/wc.py ingest /path/to/recording.m4a --audio-storage original --title 'Full recording'
+```
+
+The first command stores a mono 16 kbps Opus `.ogg` source encoded from 16 kHz input and transcribes those same bytes. The second stores the input bytes and transcribes a temporary Opus derivative. Both leave the local input untouched. Continue through cited synthesis and publication after extraction.
+
 IDs below are placeholders; replace with returned 15-character IDs. Create a page only after checking for an existing slug. The body belongs to the revision, never the page identity.
 
 ```sh
