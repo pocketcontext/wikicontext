@@ -178,7 +178,7 @@ export async function listPublications(
 ): Promise<Publication[]> {
   windowSize(offset, limit);
   return query(
-    `SELECT id, sequence, run, created FROM publications ORDER BY sequence DESC LIMIT ${limit} OFFSET ${offset}`,
+    `SELECT id, sequence, run, home, created FROM publications ORDER BY sequence DESC LIMIT ${limit} OFFSET ${offset}`,
   );
 }
 export async function latestPublication(): Promise<Publication | null> {
@@ -188,7 +188,7 @@ export async function getPublication(id: string): Promise<Publication | null> {
   return (
     (
       await query<Publication>(
-        `SELECT id, sequence, run, created FROM publications WHERE id=${identity(id)} LIMIT 1`,
+        `SELECT id, sequence, run, home, created FROM publications WHERE id=${identity(id)} LIMIT 1`,
       )
     )[0] ?? null
   );

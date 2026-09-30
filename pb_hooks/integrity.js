@@ -5,12 +5,17 @@ function publish(app,run){
  const prior=app.findRecordsByFilter('publications','sequence > 0','-sequence',1,0);
  const manifest=prior.length?JSON.parse(prior[0].getString('manifest')):{};
  const revisions=rows(app,'page_revisions','run = {:id}',{id:run.id});
- if(!revisions.length)invalid('Cannot publish an empty run');
+ const previousHome=prior.length?prior[0].getString('home'):'';
+ const changesHome=!!run.getString('home')||run.getBool('clear_home');
+ if(!revisions.length&&!changesHome)invalid('Cannot publish an empty run');
+ if(changesHome&&run.getString('home_base')!==previousHome)throw new ApiError(409,'Home page changed since staging; reassess the home choice',{});
+ const home=run.getBool('clear_home')?'':(run.getString('home')||previousHome);
  for(const r of revisions){
   const page=r.getString('page');
   if((manifest[page]||'')!==r.getString('base_revision'))throw new ApiError(409,'Page changed since synthesis; reassess in a new run',{});
   manifest[page]=r.id;
  }
+ if(home&&(!manifest[home]||app.findRecordById('page_revisions',manifest[home]).getBool('archived')))invalid('Home page must be published and unarchived; choose a replacement or clear home');
  for(const r of revisions){
   const body=r.getString('body');
   if(/^\[\^\d+\]:/m.test(body))invalid('Footnote definitions are rendered from citations');
@@ -38,13 +43,16 @@ function publish(app,run){
   }
  }
  if(Object.keys(manifest).length>10000)invalid('Publication page budget exceeded');
- const p=new Record(app.findCollectionByNameOrId('publications'));p.set('run',run.id);p.set('sequence',prior.length?prior[0].getInt('sequence')+1:1);p.set('manifest',manifest);app.save(p);
+ const p=new Record(app.findCollectionByNameOrId('publications'));p.set('run',run.id);p.set('sequence',prior.length?prior[0].getInt('sequence')+1:1);p.set('manifest',manifest);p.set('home',home);app.save(p);
  require(`${__hooks}/search.js`).publish(app,revisions);
 }
 function validate(app,r){
  const t=r.collection().name;
  if(t==='sources'&&r.getString('supersedes'))app.findRecordById('sources',r.getString('supersedes'));
  if(t==='ingestion_runs'){
+  if(r.getString('home')&&r.getBool('clear_home'))invalid('Cannot select and clear home together');
+  if(r.getString('home'))app.findRecordById('pages',r.getString('home'));
+  if(r.getString('home_base')&&!/^[a-z0-9]{15}$/.test(r.getString('home_base')))invalid('home_base must be empty or a page ID');
   if(r.isNew()&&r.getString('status')!=='staging')invalid('New runs start in staging');
   if(!r.isNew()){
    if(r.original().getString('status')!=='staging')invalid('Closed runs are immutable');
@@ -85,6 +93,8 @@ function audit(e,action){
   const hash=toString($os.cmd('sha256sum',path).output()).split(' ')[0];if(!/^[a-f0-9]{64}$/.test(hash))invalid('Cannot hash original');
   e.record.set('sha256',hash);e.app.saveNoValidate(e.record);
  }
- const row=new Record(e.app.findCollectionByNameOrId('audit_log'));row.set('action',action);row.set('collection',e.record.collection().name);row.set('record',e.record.id);row.set('actor',actor.split(':')[1]);row.set('actor_type',actor.split(':')[0]);row.set('changes',{revision:e.record.getInt('revision'),status:e.record.getString('status')});e.app.save(row);
+ const changes={revision:e.record.getInt('revision'),status:e.record.getString('status')};
+ if(e.record.collection().name==='ingestion_runs'){changes.home=e.record.getString('home');changes.home_base=e.record.getString('home_base');changes.clear_home=e.record.getBool('clear_home');}
+ const row=new Record(e.app.findCollectionByNameOrId('audit_log'));row.set('action',action);row.set('collection',e.record.collection().name);row.set('record',e.record.id);row.set('actor',actor.split(':')[1]);row.set('actor_type',actor.split(':')[0]);row.set('changes',changes);e.app.save(row);
 }
 module.exports={write,audit};

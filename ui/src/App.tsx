@@ -8,6 +8,7 @@ import {
 import EvidenceBrowser, { evidenceHref } from "./EvidenceBrowser";
 import { api, pb, sessionGeneration } from "./api";
 import SearchResults, { searchHref } from "./SearchResults";
+import { homePageSlug } from "./home";
 import type { Publication, PageSummary, PageDetail, Citation } from "./types";
 import { Markdown, pageHref } from "./Markdown";
 function safeDecode(value: string) {
@@ -187,7 +188,7 @@ function Reader() {
         return;
       }
       const pages = await api.listPages(publication.id);
-      const slug = current.slug || pages[0]?.slug;
+      const slug = current.slug || homePageSlug(publication, pages);
       const page = slug ? await api.getPage(publication.id, slug) : null;
       if (own === generation.current) {
         setPublications(history);
@@ -292,7 +293,7 @@ function Reader() {
             current.slug,
           )
         : pageHref(
-            current.slug || snapshot?.page?.slug || "",
+            current.slug || "",
             id === "live" ? undefined : id,
           )
     ).slice(1);
@@ -411,6 +412,7 @@ function Reader() {
                 ▤
               </span>
               <span>{p.title}</span>
+              {p.page === snapshot?.publication.home && <span className="home-badge">Home</span>}
             </a>
           ))}
         </nav>

@@ -48,6 +48,9 @@
       "description",
       "sources",
       "issue",
+      "home",
+      "home_base",
+      "clear_home",
       "created_by",
       "updated_by",
       "revision",
@@ -110,6 +113,7 @@
       "run",
       "sequence",
       "manifest",
+      "home",
       "created"
     ],
     "audit_log": [

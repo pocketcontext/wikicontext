@@ -23,3 +23,41 @@ Retain the immutable uploaded original. The client uses a temporary mono 16 kHz,
 Pin the latest published manifest before traversing knowledge. Retrieve relevant page revisions by its IDs and join citations to passages/renditions/sources. Bound each result, inspect `truncated`, and paginate with stable ordering. Full-text search uses a separate fixed endpoint, not SQL access to FTS tables. It searches published revision text only. Fetch source passages through SQL for evidentiary support; never attach a passage ID to an excerpt without retrieving that passage. Search pagination requires the returned publication and generation; a generation conflict requires discarding prior pages and restarting. Token matching replaces the former substring behavior; no semantic, prefix or typo matching is supplied.
 
 For an audit, check orphan pages, missing concept pages, older claims challenged by newer evidence, explicit contradictions, and weak citation support. Server validation catches structural problems but cannot judge whether a passage supports a claim. Report numbered findings with evidence and proposed fixes; publish revisions only within the requested scope.
+
+## Choose the reader home page
+
+Home belongs to an immutable publication; `/#/` remains the dynamic home route.
+Create a staging run or reuse your current staging run, then select a page:
+
+```sh
+python3 scripts/wc.py stage-home RUN_ID_________ --home onboarding --expected-revision 1
+python3 scripts/wc.py publish RUN_ID_________ --expected-revision 2
+```
+
+Use actual returned IDs and run revisions. `stage-home` resolves the slug and captures
+`home_base` from the latest publication when the choice is staged. Publishing without
+home flags preserves that choice and base, including after a failed publication.
+A run may only change home without staging page revisions. The selected page must
+be present and unarchived in the resulting manifest; archiving the current home
+requires choosing a replacement or clearing it in the same run.
+
+Use `stage-home RUN_ID --clear-home --expected-revision N` to restore alphabetical
+slug fallback. Runs without either choice carry the previous home forward. Historical
+home links such as `/#/?publication=PUBLICATION_ID` use that publication's choice;
+explicit page links continue to select their requested page.
+
+A concurrent home change produces HTTP 409 (exit 4) and leaves the run staged.
+Re-read the latest publication and reassess the choice; never automatically replace
+its expected base or retry. `stage-home` refuses to refresh an already-staged choice
+unless an explicit `--home-base PAGE_ID` is supplied after review. Use `--home-base ''`
+when you expect no configured home. After reassessment, an explicit example is:
+
+```sh
+python3 scripts/wc.py stage-home RUN_ID_________ --home onboarding --home-base PAGE_ID________ --expected-revision 2
+python3 scripts/wc.py publish RUN_ID_________ --expected-revision 3
+```
+
+For a reviewed immediate choice, `publish` also accepts `--home SLUG` or
+`--clear-home`, but requires explicit `--home-base PAGE_ID` (or `''`). It never
+fetches a replacement base implicitly. Published home choices remain in publication
+history; run audit changes also record staging home fields, without copying page prose.

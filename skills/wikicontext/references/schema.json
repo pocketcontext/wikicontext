@@ -147,6 +147,18 @@
         {
           "name": "updated_by",
           "type": "TEXT"
+        },
+        {
+          "name": "home",
+          "type": "TEXT"
+        },
+        {
+          "name": "home_base",
+          "type": "TEXT"
+        },
+        {
+          "name": "clear_home",
+          "type": "BOOLEAN"
         }
       ]
     },
@@ -348,6 +360,10 @@
         {
           "name": "sequence",
           "type": "NUMERIC"
+        },
+        {
+          "name": "home",
+          "type": "TEXT"
         }
       ]
     },

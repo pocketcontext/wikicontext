@@ -2,6 +2,8 @@ export interface Publication {
   id: string;
   sequence: number;
   run: string;
+  /** Stable page identity selected as this publication’s home, or empty for fallback. */
+  home: string;
   created: string;
 }
 

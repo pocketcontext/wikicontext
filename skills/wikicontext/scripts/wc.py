@@ -410,6 +410,42 @@ def check(cfg):
     return 3
 
 
+def home_fields(cfg, args):
+    """Capture an explicit staging choice; publishing never refreshes its base."""
+    changing = args.home is not None or args.clear_home
+    if args.home_base is not None and not changing:
+        raise Fail(2, '--home-base requires --home or --clear-home')
+    if not changing:
+        return {}
+    if args.home_base is not None and args.home_base != '' and not re.fullmatch(r'[a-z0-9]{15}', args.home_base):
+        raise Fail(2, '--home-base must be a page ID or an empty string')
+    if args.command == 'publish' and args.home_base is None:
+        raise Fail(2, 'publish home changes require explicit --home-base; use stage-home to capture the expected home earlier')
+    if args.home is not None and not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', args.home):
+        raise Fail(2, '--home must be a page slug')
+    def rows(sql):
+        result = must(cfg, 'POST', '/api/context/query', {'sql': sql})
+        if result.get('truncated'):
+            raise Fail(1, 'home selection query was truncated')
+        return [dict(zip(result['columns'], row)) for row in result['rows']]
+    base = args.home_base
+    if base is None:
+        runs = rows(f"SELECT home, clear_home FROM ingestion_runs WHERE id = '{args.run_id}' LIMIT 1")
+        if not runs:
+            raise Fail(1, 'staging run not found')
+        if runs[0]['home'] or runs[0]['clear_home']:
+            raise Fail(2, 'run already has a staged home choice; preserve it with publish, or reassess and supply explicit --home-base')
+        publications = rows('SELECT home FROM publications ORDER BY sequence DESC LIMIT 1')
+        base = publications[0]['home'] if publications else ''
+    home = ''
+    if args.home is not None:
+        pages = rows(f"SELECT id FROM pages WHERE slug = '{args.home}' LIMIT 1")
+        if not pages:
+            raise Fail(2, f'home page slug not found: {args.home}')
+        home = pages[0]['id']
+    return {'home': home, 'home_base': base or '', 'clear_home': args.clear_home}
+
+
 def run(args):
     if args.command == 'newid':
         print(''.join(secrets.choice(ID_ALPHABET) for _ in range(15)))
@@ -436,11 +472,13 @@ def run(args):
                 if args.command == 'search' else knowledge.lint(cfg))
         say(dump(data, args.pretty), sys.stdout)
         return 0
-    if args.command == 'publish':
+    if args.command in ('publish', 'stage-home'):
         if not re.fullmatch(r'[a-z0-9]{15}', args.run_id) or args.expected_revision < 1:
             raise Fail(2, 'Valid run ID and positive expected revision required')
-        data = must(cfg, 'PATCH', records('ingestion_runs', args.run_id),
-                    {'status': 'published', 'expected_revision': args.expected_revision})
+        body = {'expected_revision': args.expected_revision, **home_fields(cfg, args)}
+        if args.command == 'publish':
+            body['status'] = 'published'
+        data = must(cfg, 'PATCH', records('ingestion_runs', args.run_id), body)
         say(dump(data, args.pretty), sys.stdout)
         return 0
     if args.command == 'login':
@@ -539,9 +577,15 @@ def parse(argv):
     export = commands.add_parser('export-obsidian', parents=[pretty], help='render a pinned publication and originals into a vault root')
     export.add_argument('destination')
     export.add_argument('--sequence', type=int)
-    publish = commands.add_parser('publish', parents=[pretty], help='atomically publish a staging run after revision checks')
-    publish.add_argument('run_id')
-    publish.add_argument('--expected-revision', type=int, required=True)
+    for name, description in [('publish', 'atomically publish a staging run after revision checks'),
+                              ('stage-home', 'stage a home choice and capture its expected published home')]:
+        publish = commands.add_parser(name, parents=[pretty], help=description)
+        publish.add_argument('run_id')
+        publish.add_argument('--expected-revision', type=int, required=True)
+        home = publish.add_mutually_exclusive_group(required=name == 'stage-home')
+        home.add_argument('--home', help='page slug to select as home')
+        home.add_argument('--clear-home', action='store_true', help='restore alphabetical fallback')
+        publish.add_argument('--home-base', help='expected current home page ID, or empty string; required for publish home flags')
     search = commands.add_parser('search', parents=[pretty], help='rank published revision text with bounded full-text search')
     search.add_argument('term', help='literal token terms; all terms must match')
     scope = search.add_mutually_exclusive_group()

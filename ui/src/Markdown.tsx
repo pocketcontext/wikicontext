@@ -14,7 +14,7 @@ export function pageHref(slug: string, publication?: string, anchor?: string) {
   const query = new URLSearchParams();
   if (publication) query.set("publication", publication);
   if (anchor) query.set("heading", anchor);
-  return `#/page/${encodeURIComponent(slug)}${query.size ? `?${query}` : ""}`;
+  return `${slug ? `#/page/${encodeURIComponent(slug)}` : "#/"}${query.size ? `?${query}` : ""}`;
 }
 // Operates on Markdown text nodes only: code spans and fenced code remain literal.
 function wikiSyntax() {

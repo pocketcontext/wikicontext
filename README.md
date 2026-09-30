@@ -36,6 +36,7 @@ offers an authenticated original-file download.
 
 The live view adopts complete publications and rechecks after reconnect or tab
 focus. Selecting a historical publication pins the view until you return to live.
+Each publication can select a home page. `/#/` opens that page and the sidebar marks it Home; unset or cleared choices use the first alphabetical slug. Historical views retain their home choice, and explicit page links stay stable.
 Unpublished revisions are never selected. Markdown supports tables, code, wiki
 links with aliases/heading anchors, citation markers and callouts. Raw HTML and
 embedded images are disabled. Obsidian plugins, block embeds, editing and two-way
@@ -82,7 +83,7 @@ python3 /path/to/wikicontext/scripts/wc.py export-obsidian /path/to/vault
 
 Over SSH, forward the CLI loopback port from your browser computer with `ssh -L 8765:127.0.0.1:8765 user@host`. The cache contains only the application token with private permissions. `logout` removes the local cache; it does not revoke copies elsewhere.
 
-The `ingest` command uploads the immutable original and extracts passages. The agent then follows the skill to synthesize summaries/concepts, create citations/links, and publish a staging run. Uploading/extracting alone is not a completed knowledge-ingestion workflow. The server validates publication and rejects stale synthesis with 409. No LLM runs inside the server or Markdown exporter.
+The `ingest` command uploads the immutable original and extracts passages. The agent then follows the skill to synthesize summaries/concepts, create citations/links, and publish a staging run. Uploading/extracting alone is not a completed knowledge-ingestion workflow. The server validates publication and rejects stale synthesis with 409. Use `wc.py stage-home RUN_ID --home SLUG --expected-revision N` (or `--clear-home`) to stage the home choice and capture its expected base. Publish using the returned run revision without home flags. Home-only runs are supported; concurrent home changes return 409 and require reassessment. Direct `publish --home`/`--clear-home` requires an explicit `--home-base` page ID or empty string. No LLM runs inside the server or Markdown exporter.
 
 Supported extraction: UTF-8 text/Markdown and related text formats; text PDFs using local `pdftotext`; audio using `ffmpeg`, `ffprobe` and the configured Groq service. Audio ingestion authorizes transcription; originals are retained. Set only this application's `WIKICONTEXT_GROQ_API_KEY` in the agent environment. Missing tools, scanned PDFs without text, oversize derivatives and provider errors stop extraction with resumable source storage. No OCR or background crawler is supplied.
 
@@ -117,6 +118,7 @@ Use synthetic isolated databases only. From this repository, with the pinned ser
 python3 tests/integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/tracing.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/publication_review.py --binary /absolute/path/to/pinned/pocketcontext
+python3 tests/home.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/auth.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/realtime_access.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/realtime_publication.py --binary /absolute/path/to/pinned/pocketcontext

@@ -35,7 +35,7 @@ def seed(request):
     passage = create('passages', {'rendition': rendition['id'], 'ordinal': 1, 'locator': 'document; line 1', 'body': original.decode()})
     observatory = create('pages', {'slug': 'observatory', 'kind': 'entity'})
     telescope = create('pages', {'slug': 'telescope', 'kind': 'concept'})
-    state = {'sequence': 0, 'revision': '', 'pending': None}
+    state = {'sequence': 0, 'revision': '', 'pending': None, 'home': '', 'home_changes': 0}
 
     def stage():
         number = state['sequence'] + 1
@@ -71,6 +71,16 @@ def seed(request):
     publish()
     def control(action):
         nonlocal token
+        if action in ('/home-telescope', '/home-clear'):
+            state['home_changes'] += 1
+            setting = {'home': telescope['id']} if action == '/home-telescope' else {'clear_home': True}
+            run = create('ingestion_runs', {'key': f'browser-home-{state["home_changes"]}',
+                'status': 'staging', 'description': 'Browser home-only publication',
+                'home_base': state['home'], **setting})
+            request('PATCH', '/api/collections/ingestion_runs/records/' + run['id'],
+                {'expected_revision': run['revision'], 'status': 'published'}, token)
+            state['home'] = setting.get('home', '')
+            return request('GET', '/api/collections/publications/records?sort=-sequence&perPage=1', token=token)['items'][0]
         if action == '/other-session':
             return request('POST', '/api/collections/users/auth-with-password', {'identity': 'second@example.com', 'password': 'SyntheticUserPassword123!'})
         if action == '/stage':

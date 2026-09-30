@@ -75,6 +75,7 @@ jobs:
           python3 wikicontext/tests/realtime_access.py --binary pocketcontext/bin/pocketcontext
           python3 wikicontext/tests/realtime_publication.py --binary pocketcontext/bin/pocketcontext
           python3 wikicontext/tests/publication_review.py --binary pocketcontext/bin/pocketcontext
+          python3 wikicontext/tests/home.py --binary pocketcontext/bin/pocketcontext
           python3 wikicontext/tests/knowledge_integration.py --binary pocketcontext/bin/pocketcontext
           python3 wikicontext/tests/search_integration.py --binary pocketcontext/bin/pocketcontext
           python3 wikicontext/tests/ingest_integration.py --binary pocketcontext/bin/pocketcontext

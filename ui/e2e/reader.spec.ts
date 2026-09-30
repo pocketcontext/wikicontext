@@ -423,3 +423,40 @@ test("an idle reader clears cached content when its token expires", async ({ pag
   await expect(page.getByRole("heading", { name: "Observatory", exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => localStorage.getItem("wikicontext.reader.auth"))).toBeNull();
 });
+
+
+test("home-only publications update live root while history and explicit links remain stable", async ({ page, context, request }) => {
+  await login(page);
+  await page.goto("/#/");
+  await expect(page.getByRole("heading", { name: "Observatory", exact: true })).toBeVisible();
+  const explicit = await context.newPage();
+  await explicit.goto("/#/page/observatory");
+  await expect(explicit.getByRole("heading", { name: "Observatory", exact: true })).toBeVisible();
+  const setResponse = await request.post(process.env.WIKICONTEXT_TEST_CONTROL + "/home-telescope");
+  expect(setResponse.ok(), await setResponse.text()).toBeTruthy();
+  const selected = await setResponse.json();
+  await expect(page.getByRole("heading", { name: "Telescope", exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/#\/$/);
+  await expect(page.locator(".page-list .home-badge")).toHaveText("Home");
+  await expect(page.locator(".page-list a.selected")).toContainText("Telescope");
+  await expect(explicit.getByRole("heading", { name: "Observatory", exact: true })).toBeVisible();
+  await expect(explicit.getByLabel("Publication", { exact: true }).locator(`option[value="${selected.id}"]`)).toHaveCount(1);
+  await explicit.reload();
+  await expect(explicit.getByRole("heading", { name: "Observatory", exact: true })).toBeVisible();
+  const history = page.getByLabel("Publication", { exact: true });
+  await history.selectOption(selected.id);
+  await expect(page).toHaveURL(new RegExp(`#/\\?publication=${selected.id}$`));
+  const clearResponse = await request.post(process.env.WIKICONTEXT_TEST_CONTROL + "/home-clear");
+  expect(clearResponse.ok(), await clearResponse.text()).toBeTruthy();
+  const cleared = await clearResponse.json();
+  await expect(history.locator(`option[value="${cleared.id}"]`)).toHaveCount(1);
+  await expect(page.getByRole("heading", { name: "Telescope", exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Telescope", exact: true })).toBeVisible();
+  await history.selectOption({ label: "Publication 1" });
+  await expect(page.getByRole("heading", { name: "Observatory", exact: true })).toBeVisible();
+  await history.selectOption("live");
+  await expect(page).toHaveURL(/#\/$/);
+  await expect(page.getByRole("heading", { name: "Observatory", exact: true })).toBeVisible();
+  await expect(page.locator(".home-badge")).toHaveCount(0);
+});

@@ -69,3 +69,9 @@ it("uses stable unique heading anchors under strict rendering and supports callo
   );
   expect(container).not.toHaveTextContent("[!NOTE]");
 });
+
+
+it("home links preserve a dynamic root with optional publication", () => {
+  expect(pageHref("")).toBe("#/");
+  expect(pageHref("", "publication-id")).toBe("#/?publication=publication-id");
+});
