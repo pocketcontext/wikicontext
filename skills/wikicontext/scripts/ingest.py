@@ -14,6 +14,7 @@ import urllib.error
 import urllib.request
 
 import wc
+import image_review as reviewed_image
 
 AUDIO = {'.mp3', '.m4a', '.wav', '.flac', '.ogg', '.webm', '.mp4', '.mpeg', '.mpga', '.opus'}
 TEXT = {'.txt', '.md', '.markdown', '.csv', '.json', '.rst', '.log'}
@@ -238,7 +239,7 @@ def extract(path, content, normalized=False):
     raise wc.Fail(2, f'Unsupported source extension {suffix or "(none)"}; original stored, extraction incomplete. Supply a supported source or explicitly prepare a rendition.')
 
 
-def ingest(cfg, path, title=None, version='v1', audio_storage='normalized'):
+def ingest(cfg, path, title=None, version='v1', audio_storage='normalized', image_review=None):
     path = Path(path).resolve()
     if not version or len(version) > 100:
         raise wc.Fail(2, 'Rendition version must contain 1–100 characters.')
@@ -246,6 +247,9 @@ def ingest(cfg, path, title=None, version='v1', audio_storage='normalized'):
         raise wc.Fail(2, 'Audio storage must be normalized or original.')
     if not path.is_file():
         raise wc.Fail(2, 'Source must be a regular file.')
+    is_image = path.suffix.lower() in reviewed_image.EXTENSIONS
+    if image_review and not is_image:
+        raise wc.Fail(2, '--image-review requires a PNG, JPEG or WebP source.')
     normalized = path.suffix.lower() in AUDIO and audio_storage == 'normalized'
     provenance = None
     if normalized:
@@ -261,14 +265,23 @@ def ingest(cfg, path, title=None, version='v1', audio_storage='normalized'):
     if not content or content.startswith(b'version https://git-lfs.github.com/spec/v1\n'):
         raise wc.Fail(2, 'Source is empty or a Git LFS pointer; retrieve actual source bytes first.')
     digest = hashlib.sha256(content).hexdigest()
+    image_data = None
+    if is_image:
+        image_processor, image_passages, image_data = reviewed_image.prepare(content, path.suffix.lower(), image_review)
+        image_manifest = {'passages': len(image_passages), 'sha256': hashlib.sha256(json.dumps(image_passages, sort_keys=True).encode()).hexdigest(), 'image': image_data}
+        if len(json.dumps(image_manifest, sort_keys=True, ensure_ascii=False)) > 10000:
+            raise wc.Fail(2, 'Rendition provenance exceeds the 10000-character notes limit; no upload attempted.')
+        related = image_data.get('related_source')
+        if related and not rows(cfg, 'SELECT id FROM sources WHERE id = ' + literal(related) + ' LIMIT 1'):
+            raise wc.Fail(2, 'Image related_source does not exist; no upload attempted.')
     found = rows(cfg, 'SELECT id, sha256 FROM sources WHERE sha256 = ' + literal(digest) + ' LIMIT 1')
     source = found[0] if found else upload_source(cfg, path, content, digest, title)
     if source.get('sha256') != digest:
         raise wc.Fail(1, 'Server original checksum differs; stop and investigate before extraction.')
     # A complete immutable rendition can be reused even on a different machine.
-    kind_hint = 'transcript' if path.suffix.lower() in AUDIO else 'text'
+    kind_hint = 'image-review' if is_image else ('transcript' if path.suffix.lower() in AUDIO else 'text')
     completed = rows(cfg, 'SELECT id, notes FROM renditions WHERE source = ' + literal(source['id']) + ' AND kind = ' + literal(kind_hint) + ' AND version_label = ' + literal(version) + ' LIMIT 1')
-    if completed:
+    if completed and not is_image:
         try:
             expected = json.loads(completed[0]['notes'])['passages']
         except (ValueError, KeyError, TypeError):
@@ -278,12 +291,16 @@ def ingest(cfg, path, title=None, version='v1', audio_storage='normalized'):
             if counts == {'count': expected, 'first': 1, 'last': expected}:
                 return {'source': source['id'], 'rendition': completed[0]['id'], 'passages': expected, 'sha256': digest, 'status': 'extracted', 'next': 'Synthesize cited page revisions in a staging ingestion run, then publish.'}
     # Cache only extraction output, with a restrictive mode. Identity and server scope prevent cross-workspace reuse.
-    key = hashlib.sha256((cfg['url'] + '\n' + cfg['email'] + '\n' + digest + '\n' + version + '\n' + path.suffix.lower()).encode()).hexdigest()
+    key = hashlib.sha256((cfg['url'] + '\n' + cfg['email'] + '\n' + digest + '\n' + version + '\n' + path.suffix.lower() + ('\nimage-review\n' + image_data['review_sha256'] if image_data else '')).encode()).hexdigest()
     base = Path(os.environ.get('XDG_CACHE_HOME') or Path.home() / '.cache') / 'wikicontext' / 'extractions'
     base.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(base, 0o700)
     cache = base / (key + '.json')
-    if cache.exists():
+    if is_image:
+        # The reviewed JSON is already the reproducible extraction. Never let a
+        # stale cache bypass review validation or immutable-version conflicts.
+        kind, processor, passages = 'image-review', image_processor, image_passages
+    elif cache.exists():
         try:
             kind, processor, passages = json.loads(cache.read_text())
         except (ValueError, OSError):
@@ -303,7 +320,11 @@ def ingest(cfg, path, title=None, version='v1', audio_storage='normalized'):
     manifest_data = {'passages': len(passages), 'sha256': hashlib.sha256(json.dumps(passages, sort_keys=True).encode()).hexdigest()}
     if provenance:
         manifest_data['audio'] = provenance
-    manifest = json.dumps(manifest_data, sort_keys=True)
+    if image_data:
+        manifest_data['image'] = image_data
+    manifest = json.dumps(manifest_data, sort_keys=True, ensure_ascii=False) if image_data else json.dumps(manifest_data, sort_keys=True)
+    if len(manifest) > 10000:
+        raise wc.Fail(2, 'Rendition provenance exceeds the 10000-character notes limit.')
     query = 'SELECT id, notes FROM renditions WHERE source = ' + literal(source['id']) + ' AND kind = ' + literal(kind) + ' AND version_label = ' + literal(version) + ' LIMIT 1'
     existing = rows(cfg, query)
     if not existing:
@@ -342,4 +363,8 @@ def ingest(cfg, path, title=None, version='v1', audio_storage='normalized'):
                     raise
         if any(previous[0][field] != passage[field] for field in ('locator', 'body')):
             raise wc.Fail(4, 'Existing passage differs from extraction; select a new rendition version.')
+    if is_image:
+        counts = rows(cfg, 'SELECT COUNT(*) AS count, MIN(ordinal) AS first, MAX(ordinal) AS last FROM passages WHERE rendition = ' + literal(rendition['id']))[0]
+        if counts != {'count': len(passages), 'first': 1, 'last': len(passages)}:
+            raise wc.Fail(4, 'Existing image rendition contains unexpected passages; select a new rendition version.')
     return {'source': source['id'], 'rendition': rendition['id'], 'passages': len(passages), 'sha256': digest, 'status': 'extracted', 'next': 'Synthesize cited page revisions in a staging ingestion run, then publish.'}

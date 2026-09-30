@@ -2,12 +2,14 @@
 """Real HTTP evidence ingestion with synthetic data and isolated storage."""
 import argparse
 import hashlib
+import json
 import importlib.util
 import os
 from pathlib import Path
 import sys
 import tempfile
 import shutil
+import subprocess
 import wave
 import urllib.error
 import urllib.request
@@ -17,6 +19,7 @@ from integration import server, credentials
 SCRIPTS = Path(__file__).resolve().parents[1] / 'skills/wikicontext/scripts'
 sys.path.insert(0, str(SCRIPTS))
 import wc
+import exporter
 spec = importlib.util.spec_from_file_location('ingestion_client', SCRIPTS / 'ingest.py')
 ingest = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ingest)
@@ -105,7 +108,94 @@ def main():
             audio_file_path = '/api/files/sources/' + stored_audio['id'] + '/' + stored_audio['original']
             with urllib.request.urlopen(request.base_url + audio_file_path + '?token=' + file_token) as response:
                 assert response.read() == sent[0]
-    print('PASS: real upload/hash, duplicate and interrupted resume, protected original, cited publication, normalized audio and provider recovery')
+            # Reviewed images retain exact originals, supplement an existing source,
+            # and enter the same citation/publication/export contract as text.
+            from PIL import Image, ImageDraw
+            image_sources = []
+            image_passages = []
+            originals = {}
+            for sequence, suffix in enumerate(('png', 'jpg', 'webp'), 1):
+                image_path = Path(folder) / ('synthetic-slide.' + suffix)
+                fixture = Image.new('RGB', (96, 64), 'white')
+                ImageDraw.Draw(fixture).rectangle((4, 4, 40, 30), fill='blue')
+                fixture.save(image_path)
+                original = image_path.read_bytes()
+                review = {'processor': 'synthetic review / 1',
+                          'source_sha256': hashlib.sha256(original).hexdigest(),
+                          'width': 96, 'height': 64, 'related_source': result['source'],
+                          'sequence': sequence, 'notes': 'Synthetic supplemental slide.',
+                          'passages': [
+                              {'kind': 'transcription', 'body': 'Synthetic slide text.', 'region': [0, 0, 48, 32]},
+                              {'kind': 'description', 'body': 'A blue rectangle.', 'region': [4, 4, 37, 27]}]}
+                review_path = Path(folder) / ('review-' + suffix + '.json')
+                review_path.write_text(json.dumps(review))
+                if suffix == 'png':
+                    with patch.object(wc, 'must', side_effect=interrupted):
+                        try:
+                            ingest.ingest(cfg, image_path, image_review=review_path)
+                        except wc.Fail as error:
+                            assert str(error).startswith('simulated lost client'), str(error)
+                        else:
+                            raise AssertionError('Expected interrupted image ingestion')
+                reviewed = ingest.ingest(cfg, image_path, image_review=review_path)
+                assert reviewed == ingest.ingest(cfg, image_path, image_review=review_path)
+                cli = subprocess.run([sys.executable, str(SCRIPTS / 'wc.py'), 'ingest',
+                    str(image_path), '--image-review', str(review_path)], capture_output=True, text=True,
+                    env={**os.environ, 'WIKICONTEXT_URL': cfg['url'],
+                         'WIKICONTEXT_USER_EMAIL': cfg['email'], 'WIKICONTEXT_USER_PASSWORD': cfg['password']})
+                assert cli.returncode == 0, cli.stderr
+                assert json.loads(cli.stdout) == reviewed
+                assert reviewed['sha256'] == hashlib.sha256(original).hexdigest()
+                assert image_path.read_bytes() == original
+                record = exporter.one(cfg, 'sources', 'id,title,original_name,original,sha256', reviewed['source'])
+                image_sources.append(record)
+                originals[record['id']] = original
+                reviewed_passages = ingest.rows(cfg, "SELECT id, ordinal, locator, body FROM passages WHERE rendition = '%s' ORDER BY ordinal" % reviewed['rendition'])
+                assert len(reviewed_passages) == 2
+                assert json.loads(reviewed_passages[0]['locator'])['region'] == [0, 0, 48, 32]
+                image_passages.append(reviewed_passages[0]['id'])
+                rendition = ingest.rows(cfg, "SELECT notes FROM renditions WHERE id = '%s'" % reviewed['rendition'])[0]
+                metadata = json.loads(rendition['notes'])['image']
+                assert metadata['related_source'] == result['source']
+                assert metadata['sequence'] == sequence
+                review['passages'][0]['body'] = 'Changed reviewed text.'
+                review_path.write_text(json.dumps(review))
+                try:
+                    ingest.ingest(cfg, image_path, image_review=review_path)
+                except wc.Fail as error:
+                    assert error.code == 4
+                else:
+                    raise AssertionError('Complete reviewed image accepted conflicting evidence')
+                image_url = request.base_url + '/api/files/sources/' + record['id'] + '/' + record['original']
+                try:
+                    urllib.request.urlopen(image_url)
+                except urllib.error.HTTPError as error:
+                    assert error.code in (403, 404)
+                else:
+                    raise AssertionError('Anonymous image download succeeded')
+                with urllib.request.urlopen(image_url + '?token=' + file_token) as response:
+                    assert response.read() == original
+            assert len(ingest.rows(cfg, 'SELECT id FROM sources')) == 5
+            image_run = real_must(cfg, 'POST', wc.records('ingestion_runs'), {
+                'key': 'reviewed-image-fixture', 'description': 'Synthetic reviewed images',
+                'status': 'staging', 'sources': [s['id'] for s in image_sources]})
+            image_page = real_must(cfg, 'POST', wc.records('pages'), {'slug': 'synthetic-slide-review', 'kind': 'summary'})
+            image_revision = real_must(cfg, 'POST', wc.records('page_revisions'), {
+                'run': image_run['id'], 'page': image_page['id'], 'base_revision': '',
+                'title': 'Synthetic slide review', 'summary': 'Reviewed image evidence.',
+                'body': 'Three selected synthetic slides contain text.[^1][^2][^3]'})
+            for marker, passage in enumerate(image_passages, 1):
+                real_must(cfg, 'POST', wc.records('citations'), {
+                    'page_revision': image_revision['id'], 'passage': passage, 'marker': str(marker)})
+            real_must(cfg, 'PATCH', wc.records('ingestion_runs', image_run['id']), {'expected_revision': 1, 'status': 'published'})
+            assert len(ingest.rows(cfg, 'SELECT id FROM publications')) == 2
+            destination = Path(folder) / 'image-vault'
+            exporter.export(cfg, destination)
+            rendered = (destination / 'wiki/synthetic-slide-review.md').read_text()
+            for record in image_sources:
+                assert (destination / exporter.source_path(record)).read_bytes() == originals[record['id']]
+                assert record['original_name'] in rendered
+    print('PASS: original/hash/dedup/retry, protected downloads, cited publication/export, normalized audio recovery, PNG/JPEG/WebP reviewed evidence and conflicts')
 
 
 if __name__ == '__main__':

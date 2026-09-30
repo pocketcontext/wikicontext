@@ -49,6 +49,35 @@ LIMIT 10 OFFSET 0
 
 If an update returns HTTP 409, retrieve current published content, reassess changes and create a new run with new immutable revisions. Do not simply replace base_revision with the newest ID without reviewing its content.
 
+## Reviewed image evidence
+
+Install Pillow into the Python environment that runs the client. After inspecting an image, create a private JSON review file with its actual SHA-256 and encoded dimensions. This synthetic example describes a 640×360 image; replace all values with reviewed evidence from the original:
+
+```json
+{
+  "processor": "agent-reviewed visual extraction; reviewer/model identifier",
+  "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "width": 640,
+  "height": 360,
+  "related_source": "SOURCE_ID______",
+  "sequence": 1,
+  "notes": "Selected screenshot supplementing the recording; not timestamp-aligned.",
+  "passages": [
+    {"kind": "transcription", "body": "Revenue: $10 million", "region": [20, 40, 600, 80]},
+    {"kind": "description", "body": "The chart presents revenue as a rising line; exact intermediate values are unreadable.", "region": [20, 120, 600, 160]},
+    {"kind": "caption", "body": "Visible caption fragment: next slide", "region": [20, 300, 600, 40]}
+  ]
+}
+```
+
+`related_source`, `sequence` and `notes` are optional. `sequence` requires `related_source` and must be an integer from 1 to 1,000,000. When supplied, the related source must already exist. Regions use original pixel coordinates `[x, y, width, height]` before EXIF rotation. The example hash is a placeholder; the command rejects it unless it matches the actual input. Missing reviews, mismatched hashes/dimensions, invalid regions and unsupported images stop before upload.
+
+```sh
+python3 scripts/wc.py ingest /private/slide.png --image-review /private/slide-review.json --title 'Selected webinar slide' --version v1
+```
+
+Retry with the identical review to resume. A corrected review needs a new `--version`, preserving the earlier extraction. Continue through cited synthesis and publication. Supplement existing pages with the visual evidence and preserve the original audio transcript; do not use `supersedes` for screenshots.
+
 ## Ranked published-page search
 
 ```sh

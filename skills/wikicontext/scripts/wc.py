@@ -459,7 +459,7 @@ def run(args):
     cfg = config()
     if args.command == 'ingest':
         import ingest
-        say(dump(ingest.ingest(cfg, args.path, title=args.title, version=args.version, audio_storage=args.audio_storage), args.pretty), sys.stdout)
+        say(dump(ingest.ingest(cfg, args.path, title=args.title, version=args.version, audio_storage=args.audio_storage, image_review=args.image_review), args.pretty), sys.stdout)
         return 0
     if args.command == 'export-obsidian':
         import exporter
@@ -574,6 +574,8 @@ def parse(argv):
     source.add_argument('path')
     source.add_argument('--title')
     source.add_argument('--version', default='v1')
+    source.add_argument('--image-review', metavar='JSON',
+                        help='reviewed image passages and provenance JSON; required for PNG/JPEG/WebP')
     source.add_argument('--audio-storage', choices=('normalized', 'original'), default='normalized',
                         help='store normalized Opus audio (default), or preserve input bytes')
     export = commands.add_parser('export-obsidian', parents=[pretty], help='render a pinned publication and originals into a vault root')

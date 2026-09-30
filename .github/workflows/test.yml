@@ -24,10 +24,10 @@ jobs:
         run: python3 wikicontext/tests/backup.py
       - name: Test initial deployment orchestration
         run: python3 wikicontext/tests/bootstrap.py
-      - name: Install audio ingestion test tools
+      - name: Install audio and image ingestion test tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg
+          sudo apt-get install -y --no-install-recommends ffmpeg python3-pil
       - name: Read server revision
         id: server
         shell: bash

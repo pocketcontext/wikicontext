@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Synthetic ingestion recovery tests; never call Groq or production APIs."""
 import hashlib
+import copy
 import importlib.util
 import json
 import os
@@ -319,6 +320,179 @@ class IngestionTests(unittest.TestCase):
                 patch.object(ingest.wc.opener, 'open', return_value=response) as request:
             UPLOAD_SOURCE(self.cfg, self.source('note.md', b'fixture'), b'fixture', 'a' * 64, 'Note')
         self.assertEqual(request.call_args.args[0].get_header('User-agent'), ingest.wc.USER_AGENT)
+
+    def image_fixture(self, suffix='png', size=(96, 64)):
+        from PIL import Image, ImageDraw
+        path = self.root / ('synthetic-slide.' + suffix)
+        image = Image.new('RGB', size, 'white')
+        ImageDraw.Draw(image).rectangle((4, 4, 40, 30), fill='blue')
+        image.save(path)
+        review = {'processor': 'synthetic human review / 1',
+                  'source_sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+                  'width': size[0], 'height': size[1],
+                  'passages': [
+                      {'kind': 'transcription', 'body': 'Synthetic slide text.', 'region': [0, 0, 48, 32]},
+                      {'kind': 'description', 'body': 'A blue rectangle.', 'region': [4, 4, 37, 27]}]}
+        return path, review
+
+    def review_file(self, review):
+        path = self.root / 'review.json'
+        path.write_text(json.dumps(review))
+        return path
+
+    def test_images_preserve_originals_and_separate_reviewed_evidence(self):
+        for suffix in ('png', 'jpg', 'webp'):
+            with self.subTest(format=suffix):
+                path, review = self.image_fixture(suffix)
+                original = path.read_bytes()
+                result = ingest.ingest(self.cfg, path, image_review=self.review_file(review))
+                self.assertEqual(result, ingest.ingest(self.cfg, path, image_review=self.review_file(review)))
+                self.assertEqual(result['sha256'], hashlib.sha256(original).hexdigest())
+                stored = next(s for s in self.store.tables['sources'] if s['id'] == result['source'])
+                self.assertEqual(stored['content'], original)
+                self.assertEqual(path.read_bytes(), original)
+                rendition = next(r for r in self.store.tables['renditions'] if r['id'] == result['rendition'])
+                self.assertEqual(rendition['kind'], 'image-review')
+                provenance = json.loads(rendition['notes'])['image']
+                self.assertEqual(provenance['source_sha256'], result['sha256'])
+                self.assertEqual((provenance['width'], provenance['height']), (96, 64))
+                self.assertEqual(len(provenance['review_sha256']), 64)
+                passages = [p for p in self.store.tables['passages'] if p['rendition'] == result['rendition']]
+                for passage, expected in zip(passages, review['passages']):
+                    locator = json.loads(passage['locator'])
+                    self.assertEqual(locator['kind'], expected['kind'])
+                    self.assertEqual(locator['region'], expected['region'])
+                    self.assertEqual(locator['units'], 'pixels')
+                    self.assertEqual(passage['body'], expected['body'])
+        self.assertEqual(len(self.store.tables['sources']), 3)
+
+    def test_image_partial_resume_and_completed_review_conflict(self):
+        path, review = self.image_fixture()
+        self.store.fail_ordinal = 2
+        with self.assertRaises(ingest.wc.Fail):
+            ingest.ingest(self.cfg, path, image_review=self.review_file(review))
+        self.assertEqual(len(self.store.tables['passages']), 1)
+        self.store.fail_ordinal = None
+        result = ingest.ingest(self.cfg, path, image_review=self.review_file(review))
+        self.assertEqual(result['passages'], 2)
+        renamed = self.root / 'renamed.png'
+        renamed.write_bytes(path.read_bytes())
+        self.assertEqual(result, ingest.ingest({**self.cfg, 'email': 'second@example.test'}, renamed,
+                                              image_review=self.review_file(review)))
+        for change in ('body', 'processor', 'region'):
+            changed = copy.deepcopy(review)
+            if change == 'body':
+                changed['passages'][0]['body'] = 'Changed interpretation.'
+            elif change == 'processor':
+                changed['processor'] = 'Different reviewer / 2'
+            else:
+                changed['passages'][0]['region'] = [0, 0, 47, 32]
+            with self.subTest(change=change), self.assertRaises(ingest.wc.Fail) as raised:
+                ingest.ingest(self.cfg, path, image_review=self.review_file(changed))
+            self.assertEqual(raised.exception.code, 4)
+        self.assertEqual(len(self.store.tables['renditions']), 1)
+        changed = copy.deepcopy(review)
+        changed['passages'][0]['body'] = 'Corrected reviewed text.'
+        newer = ingest.ingest(self.cfg, path, version='v2', image_review=self.review_file(changed))
+        self.assertNotEqual(newer['rendition'], result['rendition'])
+        self.assertEqual(newer['source'], result['source'])
+        self.assertEqual(len(self.store.tables['passages']), 4)
+
+    def test_invalid_image_review_never_uploads(self):
+        path, valid = self.image_fixture()
+        invalid = []
+        for field, value in [('source_sha256', 'a' * 64), ('width', 95), ('height', True),
+                             ('processor', ''), ('sequence', 0), ('sequence', True),
+                             ('related_source', 'doesnotexist000')]:
+            bad = copy.deepcopy(valid)
+            bad[field] = value
+            invalid.append(bad)
+        for field, value in [('body', ''), ('body', 'x' * 24001), ('kind', 'instructions'),
+                             ('region', [-1, 0, 1, 1]), ('region', [0, 0, 97, 64]),
+                             ('region', [0, 0, 0, 1]), ('region', [0, 0, 1.5, 1]),
+                             ('region', [0, 0, True, 1])]:
+            bad = copy.deepcopy(valid)
+            bad['passages'][0][field] = value
+            invalid.append(bad)
+        invalid.extend([{}, [], {**valid, 'passages': []}])
+        for i, review in enumerate(invalid):
+            with self.subTest(case=i), self.assertRaises(ingest.wc.Fail):
+                ingest.ingest(self.cfg, path, image_review=self.review_file(review))
+            self.assertFalse(self.store.tables['sources'])
+        with self.assertRaises(ingest.wc.Fail):
+            ingest.ingest(self.cfg, path)
+        self.assertFalse(self.store.tables['sources'])
+
+    def test_invalid_images_never_upload(self):
+        from PIL import Image
+        valid, review = self.image_fixture()
+        invalid = [self.source('broken.png', b'not an image'),
+                   self.source('mismatched.jpg', valid.read_bytes()),
+                   self.source('truncated.png', valid.read_bytes()[:40])]
+        wide = self.root / 'too-wide.png'
+        Image.new('RGB', (16385, 1), 'white').save(wide)
+        invalid.append(wide)
+        animated = self.root / 'animated.webp'
+        Image.new('RGB', (96, 64), 'red').save(animated, save_all=True,
+             append_images=[Image.new('RGB', (96, 64), 'blue')], duration=100, loop=0)
+        invalid.append(animated)
+        gif = self.root / 'unsupported.gif'
+        Image.new('RGB', (96, 64), 'white').save(gif)
+        invalid.append(gif)
+        for path in invalid:
+            with self.subTest(path=path.name), self.assertRaises(ingest.wc.Fail):
+                ingest.ingest(self.cfg, path, image_review=self.review_file(review))
+            self.assertFalse(self.store.tables['sources'])
+
+    def test_image_review_canonical_retry_and_corrupt_passage_rejection(self):
+        path, review = self.image_fixture()
+        review['passages'].append({'kind': 'caption', 'body': 'An incomplete caption.', 'region': [0, 32, 96, 32]})
+        review_path = self.review_file(review)
+        result = ingest.ingest(self.cfg, path, image_review=review_path)
+        review_path.write_text(json.dumps(dict(reversed(list(review.items()))), indent=4))
+        self.assertEqual(result, ingest.ingest(self.cfg, path, image_review=review_path))
+        self.store.tables['passages'][0]['body'] = 'Synthetic corrupted stored text.'
+        with self.assertRaises(ingest.wc.Fail) as raised:
+            ingest.ingest(self.cfg, path, image_review=review_path)
+        self.assertEqual(raised.exception.code, 4)
+        self.store.tables['passages'][0]['body'] = review['passages'][0]['body']
+        self.store.create(self.cfg, 'POST', ingest.wc.records('passages'), {
+            'rendition': result['rendition'], 'ordinal': 4, 'locator': 'extra', 'body': 'Unexpected passage.'})
+        with self.assertRaises(ingest.wc.Fail) as raised:
+            ingest.ingest(self.cfg, path, image_review=review_path)
+        self.assertEqual(raised.exception.code, 4)
+
+    def test_malformed_review_and_decoded_pixel_limit_fail_before_writes(self):
+        from PIL import Image
+        path, review = self.image_fixture()
+        review_path = self.review_file(review)
+        malformed = [b'{', b'\xff', b'{"processor":"a","processor":"b"}',
+                     json.dumps({**review, 'processor': '\ud800'}).encode()]
+        for raw in malformed:
+            review_path.write_bytes(raw)
+            with self.subTest(raw=repr(raw)), self.assertRaises(ingest.wc.Fail):
+                ingest.ingest(self.cfg, path, image_review=review_path)
+            self.assertFalse(self.store.tables['sources'])
+        # A compressed solid image is small on disk but exceeds decoded pixel bounds.
+        large = self.root / 'too-many-pixels.png'
+        fixture = Image.new('1', (8000, 6251))
+        fixture.save(large)
+        fixture.close()
+        with self.assertRaises(ingest.wc.Fail):
+            ingest.ingest(self.cfg, large, image_review=self.review_file(review))
+        self.assertFalse(self.store.tables['sources'])
+
+    def test_image_provenance_links_supplement_without_superseding(self):
+        parent = ingest.ingest(self.cfg, self.source('webinar.txt', b'Synthetic webinar transcript.'))
+        path, review = self.image_fixture()
+        review.update(related_source=parent['source'], sequence=2, notes='Selected screenshot, not complete deck.')
+        result = ingest.ingest(self.cfg, path, image_review=self.review_file(review))
+        rendition = next(r for r in self.store.tables['renditions'] if r['id'] == result['rendition'])
+        provenance = json.loads(rendition['notes'])['image']
+        self.assertEqual(provenance['related_source'], parent['source'])
+        self.assertEqual(provenance['sequence'], 2)
+        self.assertEqual(provenance['notes'], review['notes'])
+        self.assertNotIn('supersedes', self.store.tables['sources'][-1])
 
     def test_missing_groq_key_no_provider_request(self):
         with patch.dict(os.environ, {}, clear=True), patch.object(ingest.wc.opener, 'open') as request:
