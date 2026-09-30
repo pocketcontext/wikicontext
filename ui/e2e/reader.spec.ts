@@ -67,6 +67,26 @@ test("published reader: navigation, evidence, safe Markdown, live updates, histo
   expect(await originalResponse.text()).toBe(
     "The synthetic observatory opened in 2026. Its telescope studies stars.\n",
   );
+  let releaseModalToken!: () => void;
+  const modalTokenGate = new Promise<void>(resolve => { releaseModalToken = resolve; });
+  await page.route("**/api/files/token", async route => {
+    const response = await route.fetch();
+    await modalTokenGate;
+    await route.fulfill({ response });
+  });
+  const pendingModalToken = page.waitForRequest("**/api/files/token");
+  const pendingPopup = context.waitForEvent("page");
+  await originalLink.click();
+  const stalePopup = await pendingPopup;
+  await pendingModalToken;
+  await page.goto("/#/page/telescope");
+  await page.getByRole("button", { name: /Sign out/ }).click();
+  releaseModalToken();
+  await expect.poll(() => stalePopup.isClosed()).toBe(true);
+  await page.unroute("**/api/files/token");
+  await login(page);
+  await page.getByRole("button", { name: "Citation 1", exact: true }).click();
+  await expect(originalLink).toBeVisible();
   const downloadPromise = new Promise<import("@playwright/test").Download>(
     (resolve) => {
       page.once("download", resolve);

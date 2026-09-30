@@ -724,11 +724,14 @@ export default function App() {
                 href={original}
                 onClick={(event) => {
                   event.preventDefault();
+                  const initiatingToken = pb.authStore.token;
+                  const initiatingRoute = location.hash;
                   const popup = window.open("about:blank", "_blank");
                   if (popup) popup.opener = null;
                   void api
                     .originalURL(evidence.source)
                     .then((url) => {
+                      if (!pb.authStore.isValid || pb.authStore.token !== initiatingToken || location.hash !== initiatingRoute) { popup?.close(); return; }
                       if (popup) popup.location.replace(url);
                       else window.location.assign(url);
                     })
