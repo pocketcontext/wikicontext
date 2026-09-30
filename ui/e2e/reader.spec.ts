@@ -384,3 +384,32 @@ test("ranked search: scoped pagination, safe excerpts, back navigation, conflict
   await page.getByRole("button", { name: "Load more results" }).click();
   await expect(results.locator("li")).toHaveCount(25);
 });
+
+
+test("persistent SDK sessions share login, account changes and logout without reviving old tab credentials", async ({ page, context, request }) => {
+  await login(page);
+  const peer = await context.newPage();
+  await peer.goto("/#/page/telescope");
+  await expect(peer.getByRole("heading", { name: "Telescope", exact: true })).toBeVisible();
+  await peer.reload();
+  await expect(peer.getByRole("heading", { name: "Telescope", exact: true })).toBeVisible();
+  const original = await page.evaluate(() => localStorage.getItem("wikicontext.reader.auth"));
+  await page.evaluate(value => sessionStorage.setItem("wikicontext.reader.auth", value!), original);
+  await page.getByRole("button", { name: "Citation 1", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Open passage", exact: true })).toBeVisible();
+  const response = await request.post(process.env.WIKICONTEXT_TEST_CONTROL + "/other-session");
+  expect(response.ok()).toBeTruthy();
+  const second = await response.json();
+  await peer.evaluate(session => localStorage.setItem("wikicontext.reader.auth", JSON.stringify(session)), second);
+  await expect(page.getByRole("link", { name: "Open passage", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Observatory", exact: true })).toBeVisible();
+  await peer.reload();
+  await expect(peer.getByRole("heading", { name: "Telescope", exact: true })).toBeVisible();
+  await peer.getByRole("button", { name: /Sign out/ }).click();
+  await expect(page.getByRole("button", { name: /Google/ })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("button", { name: /Google/ })).toBeVisible();
+  expect(await page.evaluate(() => sessionStorage.getItem("wikicontext.reader.auth"))).toBeNull();
+  await login(page);
+  await expect(peer.getByRole("heading", { name: "Telescope", exact: true })).toBeVisible();
+});

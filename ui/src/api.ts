@@ -1,4 +1,4 @@
-import PocketBase, { BaseAuthStore, type RecordAuthResponse } from "pocketbase";
+import PocketBase, { BaseAuthStore, LocalAuthStore, type SendOptions, type RecordAuthResponse } from "pocketbase";
 import type {
   Citation,
   PageDetail,
@@ -7,37 +7,24 @@ import type {
   Source,
 } from "./types";
 
-// Keep credentials per-tab; closing the tab ends its stored session.
-const authStore = new BaseAuthStore();
+// The SDK synchronizes this application's credentials across same-origin tabs.
 const sessionKey = "wikicontext.reader.auth";
-try {
-  const stored =
-    typeof window === "undefined"
-      ? null
-      : window.sessionStorage.getItem(sessionKey);
-  if (stored) {
-    const session = JSON.parse(stored);
-    if (
-      typeof session.token === "string" &&
-      session.record?.collectionName === "users"
-    )
-      authStore.save(session.token, session.record);
-  }
-} catch {
-  /* Browser storage may be disabled; memory authentication still works. */
+const authStore = new LocalAuthStore(sessionKey);
+// Discard legacy per-tab credentials; never resurrect them after shared logout.
+try { window.sessionStorage.removeItem(sessionKey); } catch { /* Optional storage. */ }
+if (authStore.record?.collectionName !== "users" || !authStore.isValid) authStore.clear();
+export let sessionGeneration = 0;
+function identityKey() {
+  return authStore.token ? `${authStore.record?.collectionName}:${authStore.record?.id}` : "";
 }
-authStore.onChange((token, record) => {
-  try {
-    if (typeof window === "undefined") return;
-    if (token && record?.collectionName === "users")
-      window.sessionStorage.setItem(
-        sessionKey,
-        JSON.stringify({ token, record }),
-      );
-    else window.sessionStorage.removeItem(sessionKey);
-  } catch {
-    /* Continue with the in-memory session. */
-  }
+let activeIdentity = identityKey();
+let realtimeCleanup: Promise<void> = Promise.resolve();
+authStore.onChange(() => {
+  const next = identityKey();
+  if (next === activeIdentity) return;
+  activeIdentity = next;
+  sessionGeneration++;
+  realtimeCleanup = realtimeCleanup.then(() => pb.realtime.unsubscribe()).catch(() => {});
 });
 export const pb = new PocketBase(
   typeof window === "undefined" ? "http://localhost" : window.location.origin,
@@ -45,6 +32,23 @@ export const pb = new PocketBase(
 );
 // Concurrent page/evidence queries share an endpoint but must not cancel each other.
 pb.autoCancellation(false);
+// Reject fully parsed responses from a previous identity before callers see them.
+const send = pb.send.bind(pb);
+pb.send = async <T = unknown>(path: string, options: SendOptions = {}): Promise<T> => {
+  const generation = sessionGeneration;
+  const token = authStore.token;
+  const identity = identityKey();
+  try {
+    const result = await send<T>(path, options);
+    if (generation !== sessionGeneration || identity !== identityKey()) throw new Error("Session changed");
+    return result;
+  } catch (error) {
+    const status = (error as { status?: number }).status;
+    if (generation === sessionGeneration && token && token === authStore.token && (status === 401 || status === 403))
+      authStore.clear();
+    throw error;
+  }
+};
 
 interface SQLResult {
   columns: string[];
@@ -79,11 +83,13 @@ function windowSize(offset: number, limit: number): void {
 
 export async function query<T>(sql: string): Promise<T[]> {
   const initiatingToken = pb.authStore.token;
+  const generation = sessionGeneration;
   try {
     const result = await pb.send<SQLResult>("/api/context/query", {
       method: "POST",
       body: { sql },
     });
+    if (generation !== sessionGeneration) throw new Error("Session changed");
     if (result.truncated) throw new TruncatedQueryError();
     return result.rows.map(
       (row) =>
@@ -369,18 +375,28 @@ export async function getPage(
   return { ...page, citations, backlinks, links };
 }
 
-export async function loginGoogle(): Promise<void> {
-  await pb.collection("users").authWithOAuth2({ provider: "google" });
+async function signIn(email?: string, password?: string): Promise<void> {
+  const generation = sessionGeneration, token = authStore.token;
+  const client = new PocketBase(pb.baseURL, new BaseAuthStore());
+  try {
+    const auth = client.collection("users");
+    const result = email === undefined
+      ? await auth.authWithOAuth2({ provider: "google" })
+      : await auth.authWithPassword(email, password!);
+    if (generation !== sessionGeneration || token !== authStore.token) throw new Error("Session changed");
+    if (result.record.collectionName !== "users") throw new Error("Invalid workspace identity");
+    authStore.save(result.token, result.record);
+  } finally { await client.realtime.unsubscribe(); }
 }
-export async function loginPassword(
-  email: string,
-  password: string,
-): Promise<void> {
-  await pb.collection("users").authWithPassword(email, password);
-}
+export async function loginGoogle(): Promise<void> { await signIn(); }
+export async function loginPassword(email: string, password: string): Promise<void> { await signIn(email, password); }
+let refreshedAt = 0;
+let refreshedToken = "";
 export async function refreshSession(): Promise<void> {
   const initiatingToken = pb.authStore.token;
   if (!initiatingToken) throw new Error("Please sign in to continue");
+  const generation = sessionGeneration;
+  if (initiatingToken === refreshedToken && Date.now() - refreshedAt < 300000) return;
   try {
     // Save explicitly: the SDK authRefresh helper saves even after a user signs out.
     const result = await pb.send<RecordAuthResponse>(
@@ -390,9 +406,11 @@ export async function refreshSession(): Promise<void> {
         headers: { Authorization: initiatingToken },
       },
     );
-    if (pb.authStore.token !== initiatingToken) return;
+    if (pb.authStore.token !== initiatingToken || generation !== sessionGeneration) return;
     if (result.record.collectionName !== "users")
       throw new Error("Invalid workspace identity");
+    refreshedAt = Date.now();
+    refreshedToken = result.token;
     pb.authStore.save(result.token, result.record);
   } catch (error) {
     if (
@@ -421,14 +439,18 @@ export async function originalURL(source: Source): Promise<string> {
 export async function watchPublications(
   callback: () => void,
 ): Promise<() => void> {
+  const generation = sessionGeneration;
+  await realtimeCleanup;
+  if (generation !== sessionGeneration || !pb.authStore.isValid) return () => {};
+  const notify = () => { if (generation === sessionGeneration) callback(); };
   const unsubscribeConnected = await pb.realtime.subscribe(
     "PB_CONNECT",
-    callback,
+    notify,
   );
   try {
     const unsubscribePublications = await pb
       .collection("publications")
-      .subscribe("*", callback);
+      .subscribe("*", notify);
     return () => {
       void unsubscribePublications().catch(() => {});
       void unsubscribeConnected().catch(() => {});

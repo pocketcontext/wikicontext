@@ -6,7 +6,7 @@ import {
   type FormEvent,
 } from "react";
 import EvidenceBrowser, { evidenceHref } from "./EvidenceBrowser";
-import { api, pb } from "./api";
+import { api, pb, sessionGeneration } from "./api";
 import SearchResults, { searchHref } from "./SearchResults";
 import type { Publication, PageSummary, PageDetail, Citation } from "./types";
 import { Markdown, pageHref } from "./Markdown";
@@ -43,6 +43,12 @@ function message(error: unknown) {
     : "Unable to load the wiki. Please try again.";
 }
 export default function App() {
+  const [session, setSession] = useState(sessionGeneration);
+  useEffect(() => pb.authStore.onChange(() => setSession(sessionGeneration)), []);
+  // Remount every private view when the identity changes, including child caches.
+  return <Reader key={session} />;
+}
+function Reader() {
   const [authenticated, setAuthenticated] = useState(pb.authStore.isValid);
   const [current, setCurrent] = useState(route);
   const routeSelection = useRef(current);
@@ -68,6 +74,7 @@ export default function App() {
   const [connected, setConnected] = useState(false);
   const [theme, setTheme] = useState(savedTheme);
   const generation = useRef(0);
+  useEffect(() => () => { generation.current++; }, []);
   const historyOffset = useRef(0);
   const [moreHistory, setMoreHistory] = useState(false);
   const reader = useRef<HTMLElement>(null);
@@ -205,6 +212,7 @@ export default function App() {
     let unsubscribe: (() => void) | undefined;
     api
       .watchPublications(() => {
+        if (disposed) return;
         setConnected(navigator.onLine);
         void load();
       })
@@ -215,7 +223,7 @@ export default function App() {
           setConnected(navigator.onLine);
         }
       })
-      .catch(() => setConnected(false));
+      .catch(() => { if (!disposed) setConnected(false); });
     const focus = () => void load();
     const offline = () => setConnected(false);
     const online = () => {

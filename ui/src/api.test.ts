@@ -266,7 +266,7 @@ describe("published knowledge reads", () => {
       await expect(query("SELECT id FROM pages")).rejects.toEqual({ status });
       expect(pb.authStore.token).toBe("");
       expect(
-        window.sessionStorage.getItem("wikicontext.reader.auth"),
+        window.localStorage.getItem("wikicontext.reader.auth"),
       ).toBeNull();
     },
   );

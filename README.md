@@ -44,8 +44,12 @@ vault synchronization are outside this reader's scope.
 Frontend source is in `ui/`: React, TypeScript and Vite, with bundled Markdown
 rendering and the PocketBase SDK. Content reads use authenticated SQL; the SDK
 handles ordinary user authentication, protected file tokens and SSE notifications.
-The browser keeps its application token in session storage for the current tab;
-logging out clears reader state. No provider secret is shipped to the browser.
+The official PocketBase SDK LocalAuthStore keeps the application token in local
+storage under `wikicontext.reader.auth`, shared across tabs and browser restarts.
+Logout synchronizes across tabs and clears reader state and subscriptions; account
+changes discard pending responses and private views. Tokens remain accessible to
+same-origin JavaScript. Active sessions renew at most every five minutes. Legacy
+per-tab credentials are discarded, so the first visit after upgrading requires login. No provider secret is shipped to the browser.
 
 With Node.js 24 and pnpm 10.33.2:
 
@@ -141,6 +145,12 @@ assets against a synthetic isolated database:
 (cd ui && pnpm exec playwright install chromium)
 python3 tests/ui_browser.py --binary /absolute/path/to/pinned/pocketcontext
 ```
+
+The LocalAuthStore migration passed the backend validation commands above,
+reader typecheck/build, 32 unit tests and three actual-server browser scenarios.
+The added scenario covers independently opened tabs, reload, cross-tab account
+changes/logout, restored deep links and rejection of legacy per-tab credentials.
+Existing tests cover realtime publications/reconnect, revocation and late refresh.
 
 The 30 September 2026 navigation change passed every validation command above
 against the unchanged 91d7ef1 pin, reader typecheck, 32 unit tests, production

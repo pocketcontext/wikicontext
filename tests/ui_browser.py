@@ -23,6 +23,7 @@ def seed(request):
     admin, user, token = credentials(request)
     def create(table, body):
         return request('POST', '/api/collections/' + table + '/records', body, token)
+    request('POST', '/api/collections/users/records', {'email': 'second@example.com', 'name': 'Second reader', 'password': 'SyntheticUserPassword123!', 'passwordConfirm': 'SyntheticUserPassword123!', 'verified': True}, admin)
     original = b'The synthetic observatory opened in 2026. Its telescope studies stars.\n'
     body, media = multipart({'title': 'Observatory source', 'original_name': 'observatory.txt', 'media_type': 'text/plain'},
                             'original', 'observatory.txt', original, 'text/plain')
@@ -70,6 +71,8 @@ def seed(request):
     publish()
     def control(action):
         nonlocal token
+        if action == '/other-session':
+            return request('POST', '/api/collections/users/auth-with-password', {'identity': 'second@example.com', 'password': 'SyntheticUserPassword123!'})
         if action == '/stage':
             return stage()
         if action == '/publish':
