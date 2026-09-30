@@ -21,7 +21,11 @@ let activeIdentity = identityKey();
 let realtimeCleanup: Promise<void> = Promise.resolve();
 authStore.onChange(() => {
   const next = identityKey();
-  if (next === activeIdentity) return;
+  if (next === activeIdentity) {
+    // A sibling tab already renewed this identity; do not renew it again on focus.
+    if (next) { refreshedAt = Date.now(); refreshedToken = authStore.token; }
+    return;
+  }
   activeIdentity = next;
   sessionGeneration++;
   realtimeCleanup = realtimeCleanup.then(() => pb.realtime.unsubscribe()).catch(() => {});
