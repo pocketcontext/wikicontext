@@ -1018,3 +1018,32 @@ select {
 .image-preview-canvas { max-height: 70vh; overflow: auto; }
 .image-preview-canvas > img { display: block; max-width: 100%; height: auto; }
 .image-preview-canvas.actual-size > img { max-width: none; }
+
+/* Keep navigation readable while the complete catalog remains available. */
+.sidebar { width: 292px; }
+.sidebar > .publication-control { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 12px; }
+.search input { font-size: 14px; }
+.page-navigation { flex: 1; min-height: 0; overflow: auto; }
+.topic-navigation { display: grid; gap: 3px; margin-bottom: 18px; }
+.topic-navigation a { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 11px; border-radius: 6px; color: var(--text); font-size: 14px; line-height: 1.4; }
+.topic-navigation a:hover, .topic-navigation a[aria-current="page"] { background: var(--accent-soft); color: var(--accent); }
+.topic-count { color: var(--muted); font-size: 12px; }
+.all-pages-navigation summary { display: flex; justify-content: space-between; cursor: pointer; padding: 12px 11px; border-top: 1px solid var(--border); color: var(--text); font-weight: 600; }
+.all-pages-navigation summary::before { content: "▸"; margin-right: 8px; }
+.all-pages-navigation[open] summary::before { content: "▾"; }
+.all-pages-navigation summary span { margin-left: auto; color: var(--muted); font-weight: 400; }
+.page-list a { font-size: 14px; overflow-wrap: anywhere; }
+.page-list a > span:not(.page-icon):not(.home-badge) { min-width: 0; }
+.page-icon { flex-shrink: 0; }
+.breadcrumb { font-size: 14px; }
+.connection, .subtle-button, .publication-control select { font-size: 12px; }
+.reader.welcome-reader { padding-inline: clamp(24px, 3vw, 56px); }
+@media (max-width: 1150px) and (min-width: 701px) { .sidebar { width: 266px; } }
+@media (max-width: 700px) {
+  .sidebar { width: min(320px, 90vw); padding-top: 20px; }
+  .reader.welcome-reader { padding-inline: 20px; }
+  .breadcrumb > strong { display: inline; }
+  .breadcrumb > span { display: inline; padding: 0 5px; }
+  .breadcrumb { font-size: 12px; }
+  .topbar-actions .publication-control select { max-width: 120px; }
+}

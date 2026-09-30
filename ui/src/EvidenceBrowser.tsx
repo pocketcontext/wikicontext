@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { api, pb, query } from "./api";
 import ImagePreview from "./ImagePreview";
 import type { Source } from "./types";
+import "./evidence.css";
 
 export type EvidenceCollection = "sources" | "passages";
 export function evidenceHref(collection: EvidenceCollection, id = "", term = "", publication = "", offset = 0) {
@@ -14,7 +15,7 @@ export function evidenceHref(collection: EvidenceCollection, id = "", term = "",
 }
 const literal = (value: string) => `'${value.replaceAll("'", "''")}'`;
 type Row = { id: string; title: string; body?: string; locator?: string; source_id?: string };
-export default function EvidenceBrowser({ collection, id, term, publication, offset, navigation }: { collection: EvidenceCollection; id: string; term: string; publication: string; offset: number; navigation: HTMLElement | null }) {
+export default function EvidenceBrowser({ collection, id, term, publication, offset, navigation, onTitleChange }: { collection: EvidenceCollection; id: string; term: string; publication: string; offset: number; navigation: HTMLElement | null; onTitleChange?: (title: string) => void }) {
   const actionEpoch = useRef(0);
   useEffect(() => { actionEpoch.current++; return () => { actionEpoch.current++; }; }, [collection, id]);
   const [rows, setRows] = useState<Row[]>([]);
@@ -25,6 +26,7 @@ export default function EvidenceBrowser({ collection, id, term, publication, off
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     let active = true;
+    onTitleChange?.("");
     setBusy(true); setError(""); setRows([]); setSelected(null); setSource(null);
     const timer = setTimeout(() => void (async () => {
       try {
@@ -36,33 +38,45 @@ export default function EvidenceBrowser({ collection, id, term, publication, off
         const found = await query<Row>(`${base.replace("p.locator, p.body,", "p.locator,")} WHERE instr(lower(${fields}), lower(${literal(term)}))>0 ORDER BY ${key} LIMIT 21 OFFSET ${offset}`);
         const record = id ? (await query<Row>(`${base} WHERE ${key}=${literal(id)} LIMIT 1`))[0] : null;
         const original = record ? (await query<Source>(`SELECT id,title,original_name,original,media_type,source_date,sha256 FROM sources WHERE id=${literal(record.source_id || record.id)} LIMIT 1`))[0] : null;
-        if (active) { setRows(found.slice(0,20)); setMore(found.length>20); setSelected(record || null); setSource(original || null); }
+        if (active) { setRows(found.slice(0,20)); setMore(found.length>20); setSelected(record || null); onTitleChange?.(record?.title || ""); setSource(original || null); }
       } catch (e) { if (active) setError(e instanceof Error ? e.message : "Unable to load evidence"); }
       finally { if (active) setBusy(false); }
     })(), 200);
     return () => { active = false; clearTimeout(timer); };
-  }, [collection, id, term, offset]);
+  }, [collection, id, term, offset, onTitleChange]);
+  const recordLink = (row: Row) => <a key={row.id} className={row.id === id ? "selected" : undefined} aria-current={row.id === id ? "page" : undefined} href={evidenceHref(collection, row.id, term, publication, offset)}>
+    <span>{row.title}{row.locator && <small>{row.locator}</small>}</span>
+  </a>;
   const results = <>
-    <button onClick={() => void navigator.clipboard.writeText(new URL(evidenceHref(collection,"",term,publication,offset),location.href).href).catch(() => setError("Unable to copy link"))}>Copy search link</button>
-    <nav className="page-list" aria-label="Evidence records">{rows.map(row => <a key={row.id} aria-current={row.id===id?"page":undefined} href={evidenceHref(collection,row.id,term,publication,offset)}>{row.title} {row.locator || ""}<small> · {row.id}</small></a>)}</nav>
+    <button className="evidence-search-copy" onClick={() => void navigator.clipboard.writeText(new URL(evidenceHref(collection,"",term,publication,offset),location.href).href).catch(() => setError("Unable to copy link"))}>Copy search link</button>
+    {selected && !rows.some(row => row.id === id) && <nav className="page-list evidence-current" aria-label="Current evidence record">{recordLink(selected)}</nav>}
+    <nav className="page-list evidence-list" aria-label="Evidence records">{rows.map(recordLink)}</nav>
     {!busy && !rows.length && <p>No matches.</p>}
-    {offset>0 && <a href={evidenceHref(collection,id,term,publication,Math.max(0,offset-20))}>Previous</a>}
-    {more && <a href={evidenceHref(collection,id,term,publication,offset+20)}>Next</a>}
+    {(offset > 0 || more) && <nav className="evidence-pagination" aria-label="Evidence result pages">
+      {offset > 0 && <a href={evidenceHref(collection,id,term,publication,Math.max(0,offset-20))}>Previous</a>}
+      {more && <a href={evidenceHref(collection,id,term,publication,offset+20)}>Next</a>}
+    </nav>}
   </>;
-  return <section aria-busy={busy}>
-    <h1>{collection === "sources" ? "Sources" : "Passages"}</h1>
-    <p>Immutable source evidence. This collection includes evidence that has not been cited in a publication.</p>
+  return <section className="evidence-browser" aria-busy={busy}>
+    <header className="evidence-heading">
+      <h1>{collection === "sources" ? "Sources" : "Passages"}</h1>
+      <p>Original evidence, including sources not yet cited in a published page.</p>
+    </header>
     {error && <p role="alert">{error}</p>}
-    {id ? selected ? <article>
+    {id ? selected ? <article className="evidence-record">
       <h2>{selected.title}</h2>
-      <p>{selected.locator}</p>
+      {selected.locator && <p className="evidence-locator">{selected.locator}</p>}
+      {source && <p className="evidence-file-info">{source.original_name} · {source.media_type}{source.source_date && ` · ${source.source_date}`}</p>}
+      <div className="evidence-actions" role="group" aria-label="Record actions">
+        <button onClick={() => void navigator.clipboard.writeText(new URL(evidenceHref(collection,id),location.href).href).catch(() => setError("Unable to copy link"))}>Copy record link</button>
+        {source && <button onClick={() => { const token = pb.authStore.token, epoch = actionEpoch.current; void api.originalURL(source).then(url => { if (epoch === actionEpoch.current && pb.authStore.isValid && token === pb.authStore.token) window.location.assign(url); }).catch(e => setError(String(e))); }}>Download original</button>}
+        {collection === "sources" && <a href={evidenceHref("passages", "", selected.id, publication)}>View source passages</a>}
+      </div>
       {selected.body && <blockquote className="passage">{selected.body}</blockquote>}
       {selected.source_id && <p><a href={evidenceHref("sources", selected.source_id, "", publication)}>Source: {selected.title}</a></p>}
-      <button onClick={() => void navigator.clipboard.writeText(new URL(evidenceHref(collection,id),location.href).href).catch(() => setError("Unable to copy link"))}>Copy record link</button>
-      {source && <><p>{source.original_name} · {source.media_type}</p><button onClick={() => { const token = pb.authStore.token, epoch = actionEpoch.current; void api.originalURL(source).then(url => { if (epoch === actionEpoch.current && pb.authStore.isValid && token === pb.authStore.token) window.location.assign(url); }).catch(e => setError(String(e))); }}>Download original</button></>}
       {source && <ImagePreview source={source} />}
-      {collection === "sources" && <p><a href={evidenceHref("passages", "", selected.id, publication)}>Browse evidence by source ID</a></p>}
-    </article> : !busy && <p>Record unavailable.</p> : null}
+      <details className="evidence-details"><summary>Record details</summary><dl><dt>Record ID</dt><dd>{selected.id}</dd></dl></details>
+    </article> : !busy && <p>Record unavailable.</p> : <p>Select a {collection === "sources" ? "source" : "passage"} to read its evidence.</p>}
     {navigation ? createPortal(results, navigation) : results}
   </section>;
 }

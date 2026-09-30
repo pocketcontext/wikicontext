@@ -5,7 +5,7 @@ import {
   screen,
   within,
 } from "@testing-library/react";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import WelcomePage from "./WelcomePage";
 import type { PageSummary, Publication } from "./types";
 
@@ -35,7 +35,7 @@ afterEach(cleanup);
 
 it("indexes every supplied page, preserves historical links and only suggests existing guides", () => {
   render(
-    <WelcomePage
+    <WelcomePage onTopicChange={() => {}} onSearch={() => {}}
       pages={pages}
       publication={publication}
       pinned={publication.id}
@@ -66,48 +66,51 @@ it("indexes every supplied page, preserves historical links and only suggests ex
   expect(onboarding.queryByRole("link", { name: /Release notes/ })).toBeNull();
 });
 
-it("filters summaries and topics, focuses results with the keyboard and supports alphabetical mode", () => {
-  render(<WelcomePage pages={pages} publication={publication} />);
-  const search = screen.getByRole("searchbox", {
-    name: "Search the page index",
-  });
-  const index = within(
-    screen.getByRole("region", { name: "The complete page index" }),
-  );
-  fireEvent.change(search, { target: { value: "needle" } });
-  expect(index.getAllByRole("link")).toHaveLength(1);
-  expect(
-    index.getByRole("link", { name: "A surprising subject" }),
-  ).toHaveAttribute("href", "#/page/unusual-topic");
-  fireEvent.keyDown(search, { key: "Enter" });
-  expect(
-    screen.getByRole("heading", { name: "The complete page index" }),
-  ).toHaveFocus();
-  fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+it("submits full-text search without filtering the page directory", () => {
+  const onSearch = vi.fn();
+  render(<WelcomePage onTopicChange={() => {}} pages={pages} publication={publication} onSearch={onSearch} />);
+  const search = screen.getByRole("searchbox", { name: "Search published pages" });
+  const index = within(screen.getByRole("region", { name: "The complete page index" }));
+  expect(screen.getByRole("button", { name: "Search" })).toBeDisabled();
+  fireEvent.change(search, { target: { value: "  needle  " } });
+  expect(index.getAllByRole("link")).toHaveLength(pages.length);
+  fireEvent.submit(screen.getByRole("search", { name: "Published pages" }));
+  expect(onSearch).toHaveBeenCalledWith("needle");
+  fireEvent.keyDown(search, { key: "Escape" });
+  expect(search).toHaveValue("");
+});
+
+it("filters topics, focuses the directory and supports alphabetical mode", () => {
+  render(<WelcomePage onTopicChange={() => {}} onSearch={() => {}} pages={pages} publication={publication} />);
+  const index = within(screen.getByRole("region", { name: "The complete page index" }));
   fireEvent.click(screen.getByRole("button", { name: /Handoffs & history/ }));
   expect(index.getAllByRole("link")).toHaveLength(1);
   expect(index.getByRole("link", { name: "Release notes" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "The complete page index" })).toHaveFocus();
   fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
   fireEvent.click(screen.getByRole("button", { name: "A–Z" }));
-  expect(screen.getByRole("button", { name: "A–Z" })).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-  expect(index.getAllByRole("link")[0]).toHaveTextContent(
-    "A surprising subject",
-  );
-  fireEvent.change(search, { target: { value: "absent" } });
-  expect(index.queryAllByRole("link")).toHaveLength(0);
-  fireEvent.keyDown(search, { key: "Escape" });
-  expect(index.getAllByRole("link")).toHaveLength(5);
+  expect(screen.getByRole("button", { name: "A–Z" })).toHaveAttribute("aria-pressed", "true");
+  expect(index.getAllByRole("link")[0]).toHaveTextContent("A surprising subject");
+});
+
+it("follows topic navigation and keeps all onboarding guides behind a disclosure", () => {
+  const catalog = [...pages, page("workspace-setup", "Workspace setup"), page("extra-onboarding", "Extra onboarding")];
+  const rendered = render(<WelcomePage onTopicChange={() => {}} onSearch={() => {}} pages={catalog} publication={publication} topic="handoffs-history" />);
+  const index = within(screen.getByRole("region", { name: "The complete page index" }));
+  expect(index.getAllByRole("link")).toHaveLength(1);
+  const guides = screen.getByText("All onboarding guides (5)").closest("details");
+  expect(guides).not.toHaveAttribute("open");
+  expect(within(guides!).getAllByRole("link", { hidden: true })).toHaveLength(5);
+  rendered.rerender(<WelcomePage onTopicChange={() => {}} onSearch={() => {}} pages={catalog} publication={publication} topic="all" />);
+  expect(index.getAllByRole("link")).toHaveLength(catalog.length);
 });
 
 it("replaces the complete catalog on publication changes without retaining old links", () => {
   const rendered = render(
-    <WelcomePage pages={pages} publication={publication} />,
+    <WelcomePage onTopicChange={() => {}} onSearch={() => {}} pages={pages} publication={publication} />,
   );
   rendered.rerender(
-    <WelcomePage
+    <WelcomePage onTopicChange={() => {}} onSearch={() => {}}
       pages={[page("new", "New page")]}
       publication={{ ...publication, sequence: 9 }}
     />,
@@ -121,13 +124,13 @@ it("replaces the complete catalog on publication changes without retaining old l
 });
 
 it("renders empty and untrusted catalog text safely", () => {
-  const rendered = render(<WelcomePage pages={[]} publication={null} />);
+  const rendered = render(<WelcomePage onTopicChange={() => {}} onSearch={() => {}} pages={[]} publication={null} />);
   expect(
     screen.getByText("No pages have been published in this view yet."),
   ).toBeVisible();
   expect(screen.queryAllByRole("link")).toHaveLength(0);
   rendered.rerender(
-    <WelcomePage
+    <WelcomePage onTopicChange={() => {}} onSearch={() => {}}
       pages={[page("safe", "<img src=x onerror=alert(1)>")]}
       publication={publication}
     />,
@@ -136,4 +139,20 @@ it("renders empty and untrusted catalog text safely", () => {
   expect(
     screen.getByRole("link", { name: "<img src=x onerror=alert(1)>" }),
   ).toHaveAttribute("href", "#/page/safe");
+});
+
+
+it("synchronizes topic choices with navigation and resets when Welcome opens", () => {
+  const onTopicChange = vi.fn();
+  const rendered = render(<WelcomePage pages={pages} publication={publication} onSearch={() => {}} onTopicChange={onTopicChange} topic="handoffs-history" />);
+  const index = within(screen.getByRole("region", { name: "The complete page index" }));
+  fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+  expect(onTopicChange).toHaveBeenLastCalledWith("all");
+  fireEvent.click(screen.getByRole("button", { name: /Getting started/ }));
+  expect(onTopicChange).toHaveBeenLastCalledWith("getting-started");
+  expect(index.getAllByRole("link").length).toBeLessThan(pages.length);
+  rendered.rerender(<WelcomePage pages={pages} publication={publication} onSearch={() => {}} onTopicChange={onTopicChange} topic="" />);
+  expect(index.getAllByRole("link")).toHaveLength(pages.length);
+  fireEvent.click(screen.getByRole("button", { name: "Browse all pages ↓" }));
+  expect(onTopicChange).toHaveBeenLastCalledWith("all");
 });

@@ -11,6 +11,7 @@ import { api, pb, sessionGeneration } from "./api";
 import SearchResults, { searchHref } from "./SearchResults";
 import { homePageSlug } from "./home";
 import WelcomePage from "./WelcomePage";
+import { groupWelcomePages } from "./welcome";
 import type { Publication, PageSummary, PageDetail, Citation } from "./types";
 import { Markdown, pageHref } from "./Markdown";
 function safeDecode(value: string) {
@@ -33,6 +34,7 @@ function route() {
   return {
     slug: path === "welcome" || /^(sources|passages)\//.test(path) ? "" : safeDecode(path.replace(/^page\//, "")),
     welcome: path === "welcome",
+    topic: params.get("topic") || "",
     collection: path.startsWith("sources/") ? "sources" as const : path.startsWith("passages/") ? "passages" as const : "pages" as const,
     record: /^(sources|passages)\//.test(path) ? safeDecode(path.split("/")[1] || "") : "",
     publication: params.get("publication") || "",
@@ -75,6 +77,7 @@ function Reader() {
   const [original, setOriginal] = useState("");
   const [evidenceNavigation, setEvidenceNavigation] = useState<HTMLDivElement | null>(null);
   const [menu, setMenu] = useState(false);
+  const [evidenceTitle, setEvidenceTitle] = useState("");
   const [connected, setConnected] = useState(false);
   const [theme, setTheme] = useState(savedTheme);
   const generation = useRef(0);
@@ -104,6 +107,7 @@ function Reader() {
       }
       routeSelection.current = next;
       setCurrent(next);
+      if (next.collection !== previous.collection || next.record !== previous.record) setEvidenceTitle("");
       setSearch(next.query);
       setEvidence(null);
       setMenu(false);
@@ -251,8 +255,8 @@ function Reader() {
     };
   }, [authenticated, load]);
   useEffect(() => {
-    reader.current?.scrollTo?.(0, 0);
-  }, [current.slug, current.welcome, current.publication]);
+    if (!(current.welcome && current.topic)) reader.current?.scrollTo?.(0, 0);
+  }, [current.slug, current.welcome, current.publication, current.collection, current.record, current.topic]);
   useEffect(() => {
     if (current.heading && snapshot)
       document
@@ -291,7 +295,9 @@ function Reader() {
   };
   const navigatePublication = (id: string) => {
     location.hash = (
-      current.welcome && !current.query
+      current.collection !== "pages"
+        ? evidenceHref(current.collection, current.record, current.query, id === "live" ? "" : id, current.offset)
+        : current.welcome && !current.query
         ? `#/welcome${id === "live" ? "" : `?publication=${encodeURIComponent(id)}`}`
         : current.query
         ? searchHref(
@@ -349,6 +355,12 @@ function Reader() {
   const matchingPublication = !pinned || snapshot?.publication.id === pinned;
   const pages = matchingPublication ? snapshot?.pages || [] : [];
   const searching = current.collection === "pages" && Boolean(current.query.trim() && !current.slug);
+  const topicGroups = groupWelcomePages(pages).filter(group => group.pages.length);
+  const welcomeHref = (topic: string) => {
+    const params = new URLSearchParams({ topic });
+    if (pinned) params.set("publication", pinned);
+    return `#/welcome?${params}`;
+  };
   const welcoming = current.collection === "pages" && !searching && !current.slug &&
     (current.welcome || (matchingPublication && !snapshot?.publication.home));
   return (
@@ -378,12 +390,12 @@ function Reader() {
         </div>
         <a className={`welcome-nav ${welcoming ? "selected" : ""}`} href={`#/welcome${pinned ? `?publication=${encodeURIComponent(pinned)}` : ""}`} aria-current={welcoming ? "page" : undefined}>⌂ <span>Welcome</span></a>
         <label className="publication-control">Collection<select aria-label="Collection" value={current.collection} onChange={e => { location.hash = e.target.value === "pages" ? pageHref("", pinned) : evidenceHref(e.target.value as "sources" | "passages", "", "", current.publication); }}><option value="pages">Pages</option><option value="sources">Sources</option><option value="passages">Passages</option></select></label>
-        <label className="search">
+        <label className="search" hidden={welcoming}>
           <span aria-hidden="true">⌕</span>
           <input
             aria-label={current.collection === "pages" ? "Search pages" : `Search ${current.collection}`}
             type="search"
-            placeholder="Search your knowledge…"
+            placeholder={current.collection === "pages" ? "Search published pages…" : `Search ${current.collection}…`}
             value={search}
             maxLength={500}
             onChange={(e) => {
@@ -410,8 +422,16 @@ function Reader() {
           {current.collection.toUpperCase()}
           {current.collection === "pages" && <span>{pages.length}</span>}
         </div>
-        <div ref={setEvidenceNavigation} />
-        <nav className="page-list" aria-label="Pages" hidden={current.collection !== "pages"}>
+        <div ref={setEvidenceNavigation} className="evidence-navigation" hidden={current.collection === "pages"} />
+        <div className="page-navigation" hidden={current.collection !== "pages"}>
+          <nav className="topic-navigation" aria-label="Topics">
+            {topicGroups.map(group => <a key={group.id} href={welcomeHref(group.id)} aria-current={welcoming && current.topic === group.id ? "page" : undefined}>
+              <span>{group.title}</span><span className="topic-count">{group.pages.length}</span>
+            </a>)}
+          </nav>
+          <details className="all-pages-navigation" key={welcoming ? "welcome" : "reading"} open={!welcoming}>
+            <summary>All pages <span>{pages.length}</span></summary>
+        <nav className="page-list" aria-label="Pages">
           {(current.collection === "pages" ? pages : []).map((p) => (
             <a
               key={p.id}
@@ -427,6 +447,8 @@ function Reader() {
             </a>
           ))}
         </nav>
+          </details>
+        </div>
         <div className="sidebar-bottom">
           <div className="connection">
             <span className={connected ? "live-dot" : "offline-dot"} />
@@ -452,9 +474,9 @@ function Reader() {
             ☰
           </button>
           <div className="breadcrumb">
-            Wiki <span>/</span>{" "}
+            {current.collection === "pages" ? "Wiki" : current.collection === "sources" ? "Sources" : "Passages"} <span>/</span>{" "}
             <strong>
-              {searching ? "Search" : welcoming ? "Welcome" : page?.title || "Your knowledge"}
+              {current.collection !== "pages" ? evidenceTitle || (current.record ? "Record details" : "Browse evidence") : searching ? "Search" : welcoming ? "Welcome" : page?.title || "Your knowledge"}
             </strong>
           </div>
           <div className="topbar-actions">
@@ -524,7 +546,7 @@ function Reader() {
             tabIndex={-1}
             aria-busy={busy}
           >
-            {current.collection !== "pages" && <EvidenceBrowser collection={current.collection} id={current.record} term={current.query} publication={current.publication} offset={current.offset} navigation={evidenceNavigation} />}
+            {current.collection !== "pages" && <EvidenceBrowser collection={current.collection} id={current.record} term={current.query} publication={current.publication} offset={current.offset} navigation={evidenceNavigation} onTitleChange={setEvidenceTitle} />}
             <SearchResults
               publication={snapshot?.publication.id || lastPublication.current}
               query={current.query}
@@ -533,7 +555,7 @@ function Reader() {
               }
               epoch={searchEpoch}
             />
-            {welcoming && matchingPublication && (!busy || snapshot) && <WelcomePage key={pinned || "live"} pages={pages} publication={snapshot?.publication || null} pinned={pinned} />}
+            {welcoming && matchingPublication && (!busy || snapshot) && <WelcomePage key={pinned || "live"} pages={pages} publication={snapshot?.publication || null} pinned={pinned} topic={current.topic} onTopicChange={topic => { location.hash = welcomeHref(topic); }} onSearch={query => { location.hash = searchHref(query, pinned); }} />}
             {current.collection === "pages" && !searching && !welcoming &&
               (page ? (
                 <article>

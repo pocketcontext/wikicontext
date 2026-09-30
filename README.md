@@ -36,7 +36,7 @@ offers an authenticated original-file download.
 
 The live view adopts complete publications and rechecks after reconnect or tab
 focus. Selecting a historical publication pins the view until you return to live.
-Each publication can select a home page. `/#/` opens that page and the sidebar marks it Home; unset or cleared choices open the built-in welcome index. Historical views retain their home choice, and explicit page links stay stable. The Welcome link (`/#/welcome`) always opens a searchable, topic-grouped index of every unarchived page in the selected publication, with an A–Z view and onboarding links drawn only from available pages. New or uncategorized pages remain visible under Other knowledge. Welcome search filters page titles, slugs and summaries; the sidebar retains full-text page search. No company page catalog is bundled into the reader.
+Each publication can select a home page. `/#/` opens that page and the sidebar marks it Home; unset or cleared choices open the built-in welcome index. Historical views retain their home choice, and explicit page links stay stable. The Welcome link (`/#/welcome`) always opens a searchable, topic-grouped index of every unarchived page in the selected publication, with an A–Z view and onboarding links drawn only from available pages. New or uncategorized pages remain visible under Other knowledge. Welcome and sidebar search use the same full-text search across published titles, summaries and contents. The sidebar starts with topic navigation; expand All pages for the complete catalog. The welcome directory supports topic browsing and an A–Z view, while additional onboarding guides remain under All onboarding guides. No company page catalog is bundled into the reader.
 Unpublished revisions are never selected. Markdown supports tables, code, wiki
 links with aliases/heading anchors, citation markers and callouts. Raw HTML and
 embedded images are disabled. Obsidian plugins, block embeds, editing and two-way
@@ -161,6 +161,12 @@ The 30 September 2026 navigation change passed every validation command above
 against the unchanged 91d7ef1 pin, reader typecheck, 32 unit tests, production
 build and both actual-server browser scenarios (including evidence permalinks,
 reload, collection search and keyboard navigation).
+
+The Welcome and evidence layout update passed all 23 backend validation commands
+against the unchanged 91d7ef1 pin, reader typecheck, 57 unit tests, production
+build and all eight isolated browser scenarios. Browser checks include full-text
+Welcome search, topic navigation, responsive evidence layout, protected image
+enlargement, historical views and session isolation.
 
 CI runs reader type checks, unit tests and the production browser suite before
 image publication. Container smoke checks also verify the shell and bundled assets.

@@ -1,5 +1,5 @@
 .welcome-page {
-  max-width: 1160px;
+  max-width: 1320px;
   width: 100%;
   margin: 0 auto;
   padding: 10px 0 24px;
@@ -20,7 +20,7 @@
 }
 .welcome-eyebrow {
   color: var(--accent);
-  font-size: 10px;
+  font-size: 14px;
   font-weight: 650;
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -66,7 +66,7 @@
 }
 .welcome-stat span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 14px;
 }
 .welcome-search {
   display: flex;
@@ -90,7 +90,7 @@
   padding: 14px 0;
   background: transparent;
   color: var(--text);
-  font-size: 13px;
+  font-size: 14px;
 }
 .welcome-search:focus-within {
   outline: 2px solid var(--accent);
@@ -103,12 +103,12 @@
   background: var(--accent-soft);
   color: var(--accent);
   padding: 7px 9px;
-  font-size: 11px;
+  font-size: 14px;
   white-space: nowrap;
 }
 .welcome-search-note {
   color: var(--muted);
-  font-size: 11px;
+  font-size: 14px;
   margin: 9px 0 0;
 }
 .welcome-onboarding {
@@ -120,6 +120,7 @@
   grid-template-columns: 0.94fr 1.1fr;
   background: var(--accent-soft);
 }
+.welcome-onboard-intro:only-child { grid-column: 1 / -1; }
 .welcome-onboard-intro {
   padding: 29px;
 }
@@ -131,7 +132,7 @@
   margin: 9px 0 12px;
 }
 .welcome-onboard-intro p {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--muted);
   line-height: 1.7;
   margin-bottom: 23px;
@@ -145,7 +146,7 @@
   background: var(--accent);
   color: var(--button-text);
   font-weight: 550;
-  font-size: 12px;
+  font-size: 14px;
 }
 .welcome-primary:hover {
   filter: brightness(0.94);
@@ -167,14 +168,14 @@
   border-bottom: 0;
 }
 .welcome-step-number {
-  font-size: 11px;
+  font-size: 14px;
   color: var(--muted);
   align-self: start;
   margin-top: 3px;
 }
 .welcome-step strong {
   display: block;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 580;
   overflow-wrap: anywhere;
 }
@@ -183,7 +184,7 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  font-size: 11px;
+  font-size: 14px;
   color: var(--muted);
   margin-top: 4px;
 }
@@ -198,15 +199,35 @@
 .welcome-guides {
   grid-column: 1 / -1;
   border-top: 1px solid var(--accent-border);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 20px;
   padding: 14px 29px;
-  font-size: 11px;
+  font-size: 14px;
   overflow-wrap: anywhere;
 }
-.welcome-guides > span {
-  color: var(--muted);
+.welcome-guides summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-weight: 600;
+  min-height: 32px;
+  align-content: center;
+}
+.welcome-guide-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 24px;
+  margin-top: 12px;
+}
+.welcome-guide-links a {
+  padding: 6px 0;
+}
+.welcome-step > span:nth-child(2) {
+  min-width: 0;
+}
+.welcome-search button {
+  min-height: 40px;
+}
+.welcome-search button:disabled {
+  opacity: 0.65;
+  cursor: default;
 }
 .welcome-section-heading {
   display: flex;
@@ -220,12 +241,12 @@
   margin: 0;
 }
 .welcome-section-heading p {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--muted);
   margin: 6px 0 0;
 }
 .welcome-section-heading > button {
-  font-size: 11px;
+  font-size: 14px;
   color: var(--accent);
   background: transparent;
   min-height: 40px;
@@ -263,17 +284,17 @@
 }
 .welcome-topic small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 14px;
 }
 .welcome-topic strong {
-  font-size: 12px;
+  font-size: 14px;
   display: block;
   font-weight: 600;
   margin-bottom: 5px;
   overflow-wrap: anywhere;
 }
 .welcome-topic-description {
-  font-size: 11px;
+  font-size: 14px;
   line-height: 1.55;
   color: var(--muted);
   display: block;
@@ -283,7 +304,7 @@
   bottom: 8px;
   right: 14px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 14px;
 }
 .welcome-directory {
   margin-top: 40px;
@@ -303,7 +324,7 @@
   align-items: center;
   flex-wrap: wrap;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 14px;
 }
 .welcome-filter-info strong {
   color: var(--accent);
@@ -312,7 +333,7 @@
   background: var(--accent-soft);
   color: var(--accent);
   padding: 8px 10px;
-  font-size: 11px;
+  font-size: 14px;
 }
 .welcome-segmented {
   display: flex;
@@ -325,7 +346,7 @@
   background: transparent;
   padding: 8px 12px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: 14px;
 }
 .welcome-segmented button[aria-pressed="true"] {
   background: var(--bg);
@@ -342,12 +363,12 @@
   margin-bottom: 12px;
 }
 .welcome-group-heading h3 {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 650;
   margin: 0;
 }
 .welcome-group-heading > span {
-  font-size: 10px;
+  font-size: 14px;
   color: var(--muted);
   background: var(--accent-soft);
   padding: 2px 7px;
@@ -367,7 +388,7 @@
   gap: 10px;
   padding: 10px 7px;
   color: var(--text);
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.65;
   border-radius: 4px;
   min-width: 0;
@@ -403,7 +424,7 @@
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
-  font-size: 10px;
+  font-size: 14px;
   color: var(--muted);
 }
 @media (max-width: 1200px) {
@@ -429,7 +450,10 @@
     font-size: 36px;
   }
   .welcome-hero p {
-    font-size: 13px;
+    font-size: 14px;
+  }
+  .welcome-section-heading {
+    flex-wrap: wrap;
   }
   .welcome-onboard-intro {
     padding: 23px;
@@ -440,8 +464,8 @@
   .welcome-guides {
     padding: 13px 23px;
   }
-  .welcome-guides > span {
-    width: 100%;
+  .welcome-guide-links {
+    grid-template-columns: 1fr;
   }
   .welcome-entries {
     grid-template-columns: 1fr;

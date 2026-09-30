@@ -1,10 +1,11 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { pageHref } from "./Markdown";
 import type { PageSummary, Publication } from "./types";
 import {
   filterWelcomePages,
   groupWelcomePages,
   onboardingPages,
+  WELCOME_TOPICS,
 } from "./welcome";
 import "./welcome.css";
 
@@ -12,10 +13,16 @@ export default function WelcomePage({
   pages,
   publication,
   pinned,
+  onSearch,
+  onTopicChange,
+  topic: requestedTopic,
 }: {
   pages: PageSummary[];
   publication: Publication | null;
   pinned?: string;
+  onSearch: (query: string) => void;
+  onTopicChange: (topic: string) => void;
+  topic?: string;
 }) {
   const [query, setQuery] = useState("");
   const [topic, setTopic] = useState("all");
@@ -23,21 +30,35 @@ export default function WelcomePage({
   const directory = useRef<HTMLHeadingElement>(null);
   const groups = useMemo(() => groupWelcomePages(pages), [pages]);
   const guides = useMemo(() => onboardingPages(pages), [pages]);
-  const steps = guides.length ? [guides[0]] : [];
+  useEffect(() => {
+    if (!requestedTopic) {
+      setTopic("all");
+      return;
+    }
+    setTopic(WELCOME_TOPICS.some((group) => group.id === requestedTopic) ? requestedTopic : "all");
+    directory.current?.scrollIntoView?.({ block: "start" });
+    directory.current?.focus({ preventScroll: true });
+  }, [requestedTopic]);
+  const primaryGuide = guides[0];
+  const steps: PageSummary[] = [];
   for (const signal of [
     /\b(setup|install|installation|skills?)\b/i,
     /\b(login|sign.in|authentication)\b/i,
   ]) {
     const guide = guides.find(
       (page) =>
-        !steps.includes(page) &&
+        page !== primaryGuide && !steps.includes(page) &&
         signal.test(`${page.title} ${page.slug.replaceAll("-", " ")}`),
     );
     if (guide) steps.push(guide);
   }
-  const moreGuides = guides.filter((page) => !steps.includes(page));
+  for (const guide of guides) {
+    if (steps.length >= 3) break;
+    if (guide !== primaryGuide && !steps.includes(guide)) steps.push(guide);
+  }
+  const moreGuides = guides.filter((page) => page !== primaryGuide && !steps.includes(page));
   const selected = groups.find((group) => group.id === topic);
-  const filtered = filterWelcomePages(selected?.pages ?? pages, query);
+  const filtered = filterWelcomePages(selected?.pages ?? pages, "");
   const results =
     mode === "grouped"
       ? groupWelcomePages(filtered)
@@ -68,27 +89,35 @@ export default function WelcomePage({
         </div>
       </section>
 
-      <div className="welcome-search">
+      <form
+        className="welcome-search"
+        role="search"
+        aria-label="Published pages"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (query.trim()) onSearch(query.trim());
+        }}
+      >
         <span aria-hidden="true">⌕</span>
         <input
           type="search"
-          aria-label="Search the page index"
-          placeholder="Find a page, topic or guide…"
+          maxLength={500}
+          aria-label="Search published pages"
+          aria-describedby="welcome-search-note"
+          placeholder="Find an answer, topic or guide…"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter") showDirectory();
             if (event.key === "Escape") {
               event.stopPropagation();
               setQuery("");
             }
           }}
         />
-        {query && <button onClick={showDirectory}>See results ↓</button>}
-      </div>
-      <p className="welcome-search-note">
-        Filter page titles, summaries and slugs. Use the sidebar search to
-        search page contents.
+        <button type="submit" disabled={!query.trim()}>Search</button>
+      </form>
+      <p className="welcome-search-note" id="welcome-search-note">
+        Search page titles, summaries and contents in this publication.
       </p>
 
       <section
@@ -110,7 +139,7 @@ export default function WelcomePage({
             <p>No onboarding guides are published in this view yet.</p>
           )}
         </div>
-        {guides.length > 0 && (
+        {steps.length > 0 && (
           <div className="welcome-steps">
             {steps.map((page, index) => (
               <a className="welcome-step" href={href(page)} key={page.page}>
@@ -129,14 +158,16 @@ export default function WelcomePage({
           </div>
         )}
         {moreGuides.length > 0 && (
-          <div className="welcome-guides">
-            <span>More guides</span>
-            {moreGuides.map((page) => (
-              <a href={href(page)} key={page.page}>
-                {page.title} <span aria-hidden="true">→</span>
-              </a>
-            ))}
-          </div>
+          <details className="welcome-guides">
+            <summary>All onboarding guides ({guides.length})</summary>
+            <div className="welcome-guide-links">
+              {guides.map((page) => (
+                <a href={href(page)} key={page.page}>
+                  {page.title} <span aria-hidden="true">→</span>
+                </a>
+              ))}
+            </div>
+          </details>
         )}
       </section>
 
@@ -149,6 +180,7 @@ export default function WelcomePage({
           <button
             onClick={() => {
               setTopic("all");
+              onTopicChange("all");
               setQuery("");
               showDirectory();
             }}
@@ -166,6 +198,7 @@ export default function WelcomePage({
                 key={group.id}
                 onClick={() => {
                   setTopic(group.id);
+                  onTopicChange(group.id);
                   setQuery("");
                   showDirectory();
                 }}
@@ -190,6 +223,7 @@ export default function WelcomePage({
 
       <section
         className="welcome-directory"
+        id="welcome-directory"
         aria-labelledby="welcome-directory-heading"
       >
         <div className="welcome-section-heading">
@@ -206,11 +240,12 @@ export default function WelcomePage({
             <span role="status">
               {filtered.length} of {pages.length} pages
             </span>
-            {(query || topic !== "all") && (
+            {topic !== "all" && (
               <button
                 onClick={() => {
                   setQuery("");
                   setTopic("all");
+                  onTopicChange("all");
                 }}
               >
                 Clear filters
@@ -263,7 +298,7 @@ export default function WelcomePage({
         {filtered.length === 0 && (
           <p className="welcome-empty">
             {pages.length
-              ? "No pages match these filters. Try another term or clear the filters."
+              ? "No pages in this topic yet. Browse all pages to keep exploring."
               : "No pages have been published in this view yet."}
           </p>
         )}
