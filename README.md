@@ -147,10 +147,11 @@ python3 tests/ui_browser.py --binary /absolute/path/to/pinned/pocketcontext
 ```
 
 The LocalAuthStore migration passed the backend validation commands above,
-reader typecheck/build, 32 unit tests and three actual-server browser scenarios.
+reader typecheck/build, 32 unit tests and four actual-server browser scenarios.
 The added scenario covers independently opened tabs, reload, cross-tab account
 changes/logout, restored deep links and rejection of legacy per-tab credentials.
-Existing tests cover realtime publications/reconnect, revocation and late refresh.
+Tests also cover realtime publications/reconnect, revocation, idle-token expiry
+and late refresh.
 
 The 30 September 2026 navigation change passed every validation command above
 against the unchanged 91d7ef1 pin, reader typecheck, 32 unit tests, production

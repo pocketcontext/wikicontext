@@ -413,3 +413,13 @@ test("persistent SDK sessions share login, account changes and logout without re
   await login(page);
   await expect(peer.getByRole("heading", { name: "Telescope", exact: true })).toBeVisible();
 });
+
+
+test("an idle reader clears cached content when its token expires", async ({ page }) => {
+  await login(page);
+  await page.clock.setSystemTime(new Date(Date.now() + 8 * 86400000));
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.getByRole("button", { name: /Google/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Observatory", exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem("wikicontext.reader.auth"))).toBeNull();
+});

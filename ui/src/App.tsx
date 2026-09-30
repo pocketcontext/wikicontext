@@ -151,7 +151,7 @@ function Reader() {
     return () => window.removeEventListener("keydown", shortcut);
   }, []);
   const load = useCallback(async () => {
-    if (!pb.authStore.isValid) return;
+    if (!pb.authStore.isValid) { pb.authStore.clear(); return; }
     const own = ++generation.current;
     setBusy(true);
     setError("");
