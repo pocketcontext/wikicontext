@@ -558,6 +558,129 @@ test("welcome directory includes published pages, onboarding, filters, history a
 });
 
 
+test("protected image previews support evidence links, enlargement, retry and session cleanup", async ({ page, context, request }) => {
+  const seeded = await request.post(process.env.WIKICONTEXT_TEST_CONTROL + "/images");
+  expect(seeded.ok(), await seeded.text()).toBeTruthy();
+  const records = await seeded.json();
+  const sourcePath = `/#/sources/${records.image}`;
+  // Login preserves an image evidence permalink.
+  await page.goto(sourcePath);
+  await page.getByText("Sign in with a password", { exact: true }).click();
+  await page.getByLabel("Email", { exact: true }).fill("agent@example.com");
+  await page.getByLabel("Password", { exact: true }).fill("SyntheticUserPassword123!");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  const preview = page.getByRole("img", { name: "Original source: Synthetic image source", exact: true });
+  await expect(preview).toBeVisible();
+  await expect.poll(() => preview.evaluate((node: HTMLImageElement) => node.naturalWidth)).toBe(1200);
+  const originalURL = (await preview.getAttribute("src"))!;
+  expect(new URL(originalURL).searchParams.get("download")).not.toBe("1");
+  expect(new URL(originalURL).searchParams.has("token")).toBeTruthy();
+  const anonymous = await request.get(originalURL.replace(/([?&])token=[^&]+/, "$1"));
+  expect(anonymous.ok()).toBeFalsy();
+  await expect(page).toHaveURL(new RegExp(`#\/sources/${records.image}$`));
+  await page.reload();
+  await expect(preview).toBeVisible();
+  const enlarge = page.getByRole("button", { name: "Enlarge image", exact: true });
+  await enlarge.focus();
+  await page.keyboard.press("Enter");
+  const enlarged = page.getByRole("dialog", { name: "Enlarged source image", exact: true });
+  await expect(enlarged).toBeVisible();
+  await expect(enlarged.getByRole("img")).toBeVisible();
+  await enlarged.getByRole("button", { name: "Show actual size", exact: true }).click();
+  expect(await enlarged.getByRole("img").evaluate(node => node.getBoundingClientRect().width)).toBe(1200);
+  await expect(enlarged.getByRole("button", { name: "Fit image to width", exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(enlarged).toHaveCount(0);
+  await expect(enlarge).toBeFocused();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await enlarge.click();
+  await expect(enlarged).toBeVisible();
+  expect(await enlarged.evaluate(node => node.getBoundingClientRect().width <= innerWidth)).toBeTruthy();
+  await page.screenshot({ path: "/tmp/wikicontext-image-mobile.png", fullPage: true });
+  await enlarged.getByRole("button", { name: "Close enlarged image", exact: true }).click();
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`/#/passages/${records.passage}`);
+  await expect(preview).toBeVisible();
+  await expect(page.locator("blockquote.passage")).toContainText("synthetic blue image");
+  await page.goto("/#/page/image-evidence");
+  await page.getByRole("button", { name: "Citation 1", exact: true }).click();
+  await expect(preview).toBeVisible();
+  await enlarge.click();
+  await expect(enlarged).toBeVisible();
+  await page.keyboard.press("Tab");
+  expect(await enlarged.evaluate(node => node.contains(document.activeElement))).toBeTruthy();
+  await page.keyboard.press("Escape");
+  await expect(enlarged).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Open passage", exact: true })).toBeVisible();
+  await expect(enlarge).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  // Closed enlargement controls must not enter the citation focus trap when
+  // the original-download token request failed independently of preview retry.
+  await page.route("**/api/files/token", route => route.fulfill({ status: 503,
+    contentType: "application/json", body: JSON.stringify({ message: "Synthetic token failure" }) }));
+  await page.getByRole("button", { name: "Citation 1", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Retry image preview", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Open original/ })).toHaveCount(0);
+  await page.unroute("**/api/files/token");
+  await page.getByRole("button", { name: "Retry image preview", exact: true }).click();
+  await expect(preview).toBeVisible();
+  const closeEvidence = page.getByRole("button", { name: "Close evidence", exact: true });
+  await closeEvidence.focus();
+  await page.keyboard.press("Shift+Tab");
+  await expect(enlarge).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(closeEvidence).toBeFocused();
+  await page.keyboard.press("Escape");
+  await page.goto(`/#/sources/${records.unsupported}`);
+  await expect(page.getByText("Preview is unavailable for this image format. Download the original to view it.", { exact: true })).toBeVisible();
+  await expect(page.locator("img")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Download original", exact: true })).toBeVisible();
+  await page.goto(`/#/sources/${records.broken}`);
+  await expect(page.getByText("Unable to load image preview.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry image preview", exact: true })).toBeVisible();
+  let tokenRequests = 0;
+  page.on("request", event => { if (event.url().endsWith("/api/files/token")) tokenRequests++; });
+  const imageFiles = `**/api/files/sources/${records.image}/**`;
+  await page.route(imageFiles, route => route.fulfill({ status: 403, body: "Synthetic expired file token" }));
+  await page.goto(sourcePath);
+  await expect(page.getByText("Unable to load image preview.", { exact: true })).toBeVisible();
+  const beforeRetry = tokenRequests;
+  await page.unroute(imageFiles);
+  await page.getByRole("button", { name: "Retry image preview", exact: true }).click();
+  await expect(preview).toBeVisible();
+  await expect.poll(() => preview.evaluate((node: HTMLImageElement) => node.naturalWidth)).toBe(1200);
+  expect(tokenRequests).toBeGreaterThan(beforeRetry);
+  // A late preview token cannot recreate an image after navigation and logout.
+  await page.goto("/#/page/telescope");
+  let releaseToken!: () => void;
+  const gate = new Promise<void>(resolve => { releaseToken = resolve; });
+  await page.route("**/api/files/token", async route => {
+    const response = await route.fetch();
+    await gate;
+    await route.fulfill({ response });
+  });
+  const pendingToken = page.waitForRequest("**/api/files/token");
+  await page.goto(sourcePath);
+  await pendingToken;
+  await page.goto("/#/page/telescope");
+  await page.getByRole("button", { name: /Sign out/ }).click();
+  releaseToken();
+  await expect(page.getByText("Sign in with a password", { exact: true })).toBeVisible();
+  await expect(preview).toHaveCount(0);
+  await page.unroute("**/api/files/token");
+  await login(page);
+  await page.goto(sourcePath);
+  await expect(preview).toBeVisible();
+  const peer = await context.newPage();
+  await peer.goto("/#/page/telescope");
+  await peer.getByRole("button", { name: /Sign out/ }).click();
+  await expect(preview).toHaveCount(0);
+  await expect(page.getByText("Sign in with a password", { exact: true })).toBeVisible();
+});
+
+
 test("large transcript opens under the production Context request limit", async ({ page, request }) => {
   const seeded = await request.post(process.env.WIKICONTEXT_TEST_CONTROL + "/transcript");
   expect(seeded.ok(), await seeded.text()).toBeTruthy();

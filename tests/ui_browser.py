@@ -6,6 +6,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 import re
+import struct
+import zlib
 from pathlib import Path
 import subprocess
 import sys
@@ -74,6 +76,36 @@ def seed(request):
     publish()
     def control(action):
         nonlocal token
+        if action == '/images':
+            def chunk(kind, data):
+                return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
+            png = (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 1200, 600, 8, 2, 0, 0, 0))
+                   + chunk(b'IDAT', zlib.compress((b'\0' + b'\x24\x80\xd0' * 1200) * 600)) + chunk(b'IEND', b''))
+            sources = {}
+            for key, mime, name, content in (
+                ('image', 'image/png', 'observatory.png', png),
+                ('broken', 'image/png', 'broken.png', b'Synthetic undecodable image bytes'),
+                ('unsupported', 'image/svg+xml', 'unsupported.svg', b'<svg xmlns="http://www.w3.org/2000/svg"><text>synthetic</text></svg>'),
+            ):
+                body, media = multipart({'title': f'Synthetic {key} source', 'original_name': name, 'media_type': mime},
+                                        'original', name, content, mime)
+                upload = urllib.request.Request(request.base_url + '/api/collections/sources/records', body,
+                                                {'Authorization': token, 'Content-Type': media})
+                with urllib.request.urlopen(upload) as response:
+                    sources[key] = json.load(response)
+            rendition = create('renditions', {'source': sources['image']['id'], 'kind': 'image-review',
+                'processor': 'synthetic browser fixture', 'version_label': 'v1'})
+            image_passage = create('passages', {'rendition': rendition['id'], 'ordinal': 1,
+                'locator': 'image; description; region 0,0,1200,600', 'body': 'A synthetic blue image.'})
+            run = create('ingestion_runs', {'key': 'browser-images', 'status': 'staging',
+                'description': 'Synthetic image preview fixture', 'sources': [sources['image']['id']]})
+            page = create('pages', {'slug': 'image-evidence', 'kind': 'concept'})
+            revision = create('page_revisions', {'run': run['id'], 'page': page['id'], 'title': 'Image evidence',
+                'summary': 'Synthetic image evidence.', 'body': 'The synthetic image is blue.[^1]'})
+            create('citations', {'page_revision': revision['id'], 'passage': image_passage['id'], 'marker': '1'})
+            request('PATCH', '/api/collections/ingestion_runs/records/' + run['id'],
+                {'expected_revision': run['revision'], 'status': 'published'}, token)
+            return {**{key: value['id'] for key, value in sources.items()}, 'passage': image_passage['id']}
         if action == '/transcript':
             run = create('ingestion_runs', {'key': 'large-transcript', 'status': 'staging',
                 'description': 'Synthetic transcript request-budget regression'})

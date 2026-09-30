@@ -442,6 +442,20 @@ export async function originalURL(source: Source): Promise<string> {
     { token, download: true },
   );
 }
+/** Only decoded raster formats supported by reviewed-image ingestion are previewed. */
+export function canPreviewImage(source: Source): boolean {
+  return ["image/png", "image/jpeg", "image/webp"].includes(source.media_type.trim().toLowerCase());
+}
+export async function previewURL(source: Source): Promise<string> {
+  identity(source.id);
+  if (!canPreviewImage(source) || !source.original) throw new Error("Image preview unavailable");
+  const generation = sessionGeneration;
+  const token = await pb.files.getToken();
+  if (generation !== sessionGeneration || !pb.authStore.isValid) throw new Error("Session changed");
+  const url = pb.files.getURL({ id: source.id, collectionName: "sources" }, source.original, { token });
+  if (new URL(url).origin !== new URL(pb.baseURL).origin) throw new Error("Invalid image origin");
+  return url;
+}
 export async function watchPublications(
   callback: () => void,
 ): Promise<() => void> {
@@ -479,5 +493,6 @@ export const api = {
   getPage,
   searchPages,
   originalURL,
+  previewURL,
   watchPublications,
 };

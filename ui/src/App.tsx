@@ -5,6 +5,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
+import ImagePreview from "./ImagePreview";
 import EvidenceBrowser, { evidenceHref } from "./EvidenceBrowser";
 import { api, pb, sessionGeneration } from "./api";
 import SearchResults, { searchHref } from "./SearchResults";
@@ -693,9 +694,9 @@ function Reader() {
               if (e.key === "Escape") closeEvidence();
               if (e.key === "Tab") {
                 const focusable =
-                  e.currentTarget.querySelectorAll<HTMLElement>(
+                  Array.from(e.currentTarget.querySelectorAll<HTMLElement>(
                     "button,a[href]",
-                  );
+                  )).filter(node => node.getClientRects().length > 0);
                 const first = focusable[0],
                   last = focusable[focusable.length - 1];
                 if (e.shiftKey && document.activeElement === first) {
@@ -739,6 +740,7 @@ function Reader() {
                 </>
               )}
             </dl>
+            <ImagePreview source={evidence.source} />
             {original && (
               <a
                 className="primary-button"

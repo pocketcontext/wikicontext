@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, pb, query } from "./api";
+import ImagePreview from "./ImagePreview";
 import type { Source } from "./types";
 
 export type EvidenceCollection = "sources" | "passages";
@@ -59,6 +60,7 @@ export default function EvidenceBrowser({ collection, id, term, publication, off
       {selected.source_id && <p><a href={evidenceHref("sources", selected.source_id, "", publication)}>Source: {selected.title}</a></p>}
       <button onClick={() => void navigator.clipboard.writeText(new URL(evidenceHref(collection,id),location.href).href).catch(() => setError("Unable to copy link"))}>Copy record link</button>
       {source && <><p>{source.original_name} · {source.media_type}</p><button onClick={() => { const token = pb.authStore.token, epoch = actionEpoch.current; void api.originalURL(source).then(url => { if (epoch === actionEpoch.current && pb.authStore.isValid && token === pb.authStore.token) window.location.assign(url); }).catch(e => setError(String(e))); }}>Download original</button></>}
+      {source && <ImagePreview source={source} />}
       {collection === "sources" && <p><a href={evidenceHref("passages", "", selected.id, publication)}>Browse evidence by source ID</a></p>}
     </article> : !busy && <p>Record unavailable.</p> : null}
     {navigation ? createPortal(results, navigation) : results}
