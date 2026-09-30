@@ -74,6 +74,20 @@ def seed(request):
     publish()
     def control(action):
         nonlocal token
+        if action == '/transcript':
+            run = create('ingestion_runs', {'key': 'large-transcript', 'status': 'staging',
+                'description': 'Synthetic transcript request-budget regression'})
+            page = create('pages', {'slug': 'large-transcript', 'kind': 'concept'})
+            revision = create('page_revisions', {'run': run['id'], 'page': page['id'],
+                'title': 'Large transcript', 'summary': 'Synthetic transcript with 738 citations.',
+                'body': '\n\n'.join(f'Synthetic sentence.[^{n}]' for n in range(1, 739))})
+            for n in range(1, 739):
+                create('citations', {'page_revision': revision['id'], 'passage': passage['id'], 'marker': str(n)})
+            request('PATCH', '/api/collections/ingestion_runs/records/' + run['id'],
+                {'expected_revision': run['revision'], 'status': 'published'}, token)
+            request('PATCH', '/api/settings', {'rateLimits': {'enabled': True, 'rules': [
+                {'label': '/api/context/', 'audience': '', 'duration': 10, 'maxRequests': 60}]}}, admin)
+            return {'ok': True}
         if action in ('/home-telescope', '/home-clear'):
             state['home_changes'] += 1
             setting = {'home': telescope['id']} if action == '/home-telescope' else {'clear_home': True}

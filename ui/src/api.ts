@@ -345,7 +345,9 @@ export async function getPage(
   const [rows, backlinks, links] = await Promise.all([
     allRows<CitationRow>(
       `SELECT c.id, c.marker, c.note, t.id AS passage_id, t.ordinal, t.locator, t.body AS passage_body, s.id AS source_id, s.title AS source_title, s.original_name, s.original, s.media_type, s.source_date, s.sha256 FROM citations c JOIN passages t ON t.id=c.passage JOIN renditions e ON e.id=t.rendition JOIN sources s ON s.id=e.source WHERE c.page_revision=${identity(page.id)} ORDER BY c.id`,
-      10,
+      // Transcript pages can cite hundreds of short passages. Use the normal
+      // batch size; allRows shrinks it if long passages exceed the byte budget.
+      100,
     ),
     allRows<PageSummary>(
       `SELECT ${summary} ${published(publicationId)} AND r.id IN (SELECT l.page_revision FROM page_links l WHERE l.target=${identity(page.page)}) ORDER BY p.slug`,

@@ -254,6 +254,27 @@ describe("published knowledge reads", () => {
     }
   });
 
+  it.each([false, true])("loads all 738 transcript citations within the request budget (oversized batch: %s)", async (oversized) => {
+    const citations = Array.from({ length: 738 }, (_, i) => ({
+      id: String(i).padStart(15, "0"), marker: String(i + 1),
+      passage_id: String(i).padStart(15, "0"), passage_body: "Synthetic transcript passage.",
+    }));
+    const send = vi.spyOn(pb, "send").mockImplementation(async (_path, options) => {
+      const sql = options?.body.sql as string;
+      if (sql.includes("AS manifest_type")) return validManifest();
+      if (sql.includes("r.body")) return response([{ id: "revision0000001", page: "page00000000001" }]);
+      if (!sql.includes("FROM citations c")) return response([]);
+      const [, limit, offset] = /LIMIT (\d+) OFFSET (\d+)/.exec(sql)!;
+      if (oversized && Number(limit) > 50) throw { status: 413 };
+      return response(citations.slice(Number(offset), Number(offset) + Number(limit)));
+    });
+    const page = await getPage(publication, "transcript");
+    expect(page?.citations.map(c => c.marker)).toEqual(citations.map(c => c.marker));
+    expect(page?.citations[737].passage.body).toBe("Synthetic transcript passage.");
+    // Leave room in the 60/10s budget for the index and initial SSE reload.
+    expect(send.mock.calls.length).toBeLessThanOrEqual(20);
+  });
+
   it.each([401, 403])(
     "clears a revoked session after SQL status %i",
     async (status) => {

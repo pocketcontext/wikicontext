@@ -556,3 +556,22 @@ test("welcome directory includes published pages, onboarding, filters, history a
   await expect(page.getByRole("heading", { name: "Colleague onboarding", exact: true })).toBeVisible();
   await expect(history).not.toHaveValue("live");
 });
+
+
+test("large transcript opens under the production Context request limit", async ({ page, request }) => {
+  const seeded = await request.post(process.env.WIKICONTEXT_TEST_CONTROL + "/transcript");
+  expect(seeded.ok(), await seeded.text()).toBeTruthy();
+  await login(page);
+  const throttled: string[] = [];
+  let queries = 0;
+  page.on("response", response => { if (response.status() === 429) throttled.push(response.url()); });
+  page.on("request", request => { if (request.url().endsWith("/api/context/query")) queries++; });
+  await page.goto("/#/page/large-transcript");
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Large transcript", exact: true })).toBeVisible();
+  await expect(page.locator(".source-row")).toHaveCount(738);
+  await page.getByRole("button", { name: "Citation 738", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Open passage", exact: true })).toBeVisible();
+  expect(throttled).toEqual([]);
+  expect(queries).toBeLessThan(60);
+});
