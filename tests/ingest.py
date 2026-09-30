@@ -151,7 +151,8 @@ class IngestionTests(unittest.TestCase):
         def missing_duration(args):
             return b'N/A\n' if args[0] == 'ffprobe' else real_command(args)
         with patch.object(ingest, 'command', side_effect=missing_duration):
-            self.assertAlmostEqual(ingest.duration(path), 1, delta=0.001)
+            # FFmpeg versions may round progress timestamps by a millisecond.
+            self.assertAlmostEqual(ingest.duration(path), 1, delta=0.002)
 
     def test_invalid_audio_duration_is_rejected(self):
         for value in [b'0', b'-1', b'nan', b'inf']:
