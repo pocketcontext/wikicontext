@@ -95,6 +95,11 @@ See [data model](docs/data-model.md) and [skill workflows](skills/wikicontext/re
 
 ## SQL diagnostics
 
+For an optional Python CLI experiment that ranks a full published snapshot using
+OpenAI's metered API, see [the semantic search proof of concept](tools/semantic_search_poc/README.md).
+Preparation is read-only; model searches upload the selected corpus to OpenAI.
+This experiment does not replace the application's FTS search or browser UI.
+
 For published-page body sizes, pin a publication sequence and expand its manifest:
 
 ```sql
