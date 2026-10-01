@@ -59,7 +59,42 @@ immutable source original referenced by an online SQLite snapshot. `backup.py`
 checks recorded source SHA-256 values, packages database and originals together,
 and publishes the latest pointer only after successful upload. Archives live under
 `<LITESTREAM_PATH>/full-backups`. Backups include identities and private settings;
-protect them as credentials. Nothing automatically deletes old backups.
+protect them as credentials. Every archive is independent: removing an older
+archive does not remove evidence from a retained archive.
+
+The container enables `WIKICONTEXT_BACKUP_PRUNE=true`. After a successful archive
+upload and latest-pointer publication, retention keeps all snapshots from the
+last 48 hours, the newest per UTC day through 30 days, and the newest per UTC
+month through 365 days. It always preserves the latest pointer's target and the
+three newest archives, regardless of age. Set the flag to `false` to suspend
+automatic pruning; running the script outside the image defaults to disabled.
+Retention bounds duplicate copies, not the size of the growing evidence corpus.
+
+Pruning only recognizes timestamp/UUID archive names under the dedicated
+`full-backups/` prefix. It leaves unknown objects, `latest.json`, and Litestream
+replica objects untouched. Missing, invalid or dangling pointers abort cleanup.
+Upload and pruning share the local volume lock; this assumes the required single
+writer and does not coordinate independent hosts. Cleanup failures are reported
+separately and do not stop the application or invalidate a successful backup.
+
+Before initial cleanup, inspect the plan and restore a retained archive into
+isolated storage. With the existing R2 environment available:
+
+```sh
+python3 /usr/local/bin/wikicontext-backup.py prune --dry-run
+# Explicit cleanup using the same policy:
+python3 /usr/local/bin/wikicontext-backup.py prune
+# Choose an exact archive key from the inventory; use an empty destination:
+WIKICONTEXT_DATA_DIR=/private/isolated-recovery \
+  python3 /usr/local/bin/wikicontext-backup.py restore --archive "$ARCHIVE_KEY"
+```
+
+Dry-run output includes retained/deletable counts and bytes plus deletion
+candidates. Keep this operational inventory private. Do not apply age-based R2
+expiration to the complete-backup prefix: it cannot preserve the last good
+archive through an extended backup outage. Historical archives carry internal
+database/original checksums; only the latest pointer additionally records the
+outer archive checksum. Do not run a recovered server against the live replica.
 
 A complete backup runs shortly after startup, every
 `WIKICONTEXT_BACKUP_INTERVAL` seconds (default 3600, allowed 1–3600), and after a
@@ -73,8 +108,8 @@ before considering database-only recovery, then verifies all original references
 before starting. Existing volumes are never replaced automatically. Database-only
 recovery fails startup if referenced originals are missing. Recover into a fresh
 isolated directory/volume; verify hashes, ordinary-user queries and protected file
-access before switching service. Keep original immutable files until a deliberate
-retention policy is implemented. A generated Obsidian vault is not a backup.
+access before switching service. Backup retention never deletes live immutable
+originals or records. A generated Obsidian vault is not a backup.
 
 For a local, synthetic drill without Docker:
 

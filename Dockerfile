@@ -80,7 +80,7 @@ COPY --from=reader /ui/dist/ ./ui/dist/
 
 # The container runs as root. ONCE creates and mounts the /storage volume and offers no option to
 # set its owner or the container's user, and the server binds port 80.
-ENV WIKICONTEXT_RATE_LIMITS=true
+ENV WIKICONTEXT_RATE_LIMITS=true WIKICONTEXT_BACKUP_PRUNE=true
 VOLUME /storage
 EXPOSE 80
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
