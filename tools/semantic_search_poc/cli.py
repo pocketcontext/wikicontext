@@ -12,9 +12,8 @@ import tempfile
 import time
 from urllib.parse import quote
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'skills/wikicontext/scripts'))
-import wc
-import knowledge
+from wikicontext_client import cli as wc
+from wikicontext_client import knowledge
 
 VERSION = 1
 DEFAULT_MODEL = 'gpt-6-luna'

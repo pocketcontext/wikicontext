@@ -11,10 +11,9 @@ import tempfile
 from unittest.mock import patch
 
 from integration import server, credentials, ROOT
-sys.path.insert(0, str(ROOT / 'skills/wikicontext/scripts'))
-import exporter
-import ingest
-import wc
+from wikicontext_client import exporter
+from wikicontext_client import ingest
+from wikicontext_client import cli as wc
 
 
 def main():
@@ -73,7 +72,7 @@ def main():
             assert md.read_bytes() == original_render
             assert json.loads((destination / exporter.MANIFEST).read_text())['sequence'] == 1
             # Exercise the real portable CLI and its environment/session integration.
-            result = subprocess.run([sys.executable, str(ROOT/'skills/wikicontext/scripts/wc.py'),
+            result = subprocess.run([sys.executable, '-m', 'wikicontext_client',
                 'export-obsidian', str(destination), '--sequence', '2'], env=env, capture_output=True, text=True)
             assert result.returncode == 0, result.stderr
             assert json.loads(result.stdout)['sequence'] == 2

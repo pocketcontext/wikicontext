@@ -1,6 +1,6 @@
 # Knowledge schema
 
-Use `wc.py schema` for live SQL columns and `wc.py check` for differences from `schema.json`. Business reads use explicit columns. SQL returns `{columns, rows, truncated}`; never act on a truncated result as if complete. Page or narrow the query.
+Use `wikicontext schema` for live SQL columns and `wikicontext check` for differences from `schema.json`. Business reads use explicit columns. SQL returns `{columns, rows, truncated}`; never act on a truncated result as if complete. Page or narrow the query.
 
 | Collection | Content and invariants |
 | --- | --- |

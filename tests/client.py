@@ -3,10 +3,40 @@
 import importlib.util
 from pathlib import Path
 import unittest
+import io
+import json
+import os
+import tempfile
+import urllib.request
 from unittest.mock import patch
-spec=importlib.util.spec_from_file_location('wc',Path(__file__).resolve().parents[1]/'skills/wikicontext/scripts/wc.py')
-wc=importlib.util.module_from_spec(spec);spec.loader.exec_module(wc)
+from wikicontext_client import cli as wc
 class Client(unittest.TestCase):
+    def test_tracing_excludes_groq_origin_and_request_contents(self):
+        from observecontext_client.instrumentation import instrument_cli
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'events.jsonl'
+            config = dict(version=1, url='https://wiki.example.com', origin=[],
+                service='wikicontext.client', output=str(output), upload=False,
+                spool=None, flush_timeout=10, capture_sql=False, status_file=None)
+            def response(*args, **kwargs):
+                value = io.BytesIO(b'{}')
+                value.status = 200
+                value.headers = {}
+                return value
+            with patch.dict(os.environ, {'OBSERVECONTEXT_CAPTURE_V1': json.dumps(config)}), \
+                    patch('urllib.request.OpenerDirector.open', side_effect=response), \
+                    instrument_cli(service='wikicontext.client', opener=wc.opener):
+                for url in ('https://api.groq.com/openai/v1/audio/transcriptions',
+                            'https://wiki.example.com/api/collections/sources/records'):
+                    request = urllib.request.Request(url, data=b'private original bytes',
+                        headers={'Authorization': 'private-token'})
+                    with wc.opener.open(request) as result:
+                        self.assertEqual(result.read(), b'{}')
+            events = [json.loads(line) for line in output.read_text().splitlines()]
+            self.assertEqual(len(events), 1)
+            self.assertEqual(events[0]['route'], '/api/collections/sources/records')
+            self.assertNotIn('private', output.read_text())
+
     def test_throttled_read(self):
         with patch.object(wc,'call',side_effect=[(429,{}),(200,{'rows':[]})]) as call,patch.object(wc.time,'sleep') as sleep:
             self.assertEqual(wc.must({},'POST','/api/context/query',{}),{'rows':[]})

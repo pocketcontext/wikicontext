@@ -16,13 +16,9 @@ import urllib.request
 from unittest.mock import patch
 from integration import server, credentials
 
-SCRIPTS = Path(__file__).resolve().parents[1] / 'skills/wikicontext/scripts'
-sys.path.insert(0, str(SCRIPTS))
-import wc
-import exporter
-spec = importlib.util.spec_from_file_location('ingestion_client', SCRIPTS / 'ingest.py')
-ingest = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(ingest)
+from wikicontext_client import cli as wc
+from wikicontext_client import exporter
+from wikicontext_client import ingest
 
 
 def main():
@@ -139,7 +135,7 @@ def main():
                             raise AssertionError('Expected interrupted image ingestion')
                 reviewed = ingest.ingest(cfg, image_path, image_review=review_path)
                 assert reviewed == ingest.ingest(cfg, image_path, image_review=review_path)
-                cli = subprocess.run([sys.executable, str(SCRIPTS / 'wc.py'), 'ingest',
+                cli = subprocess.run([sys.executable, '-m', 'wikicontext_client', 'ingest',
                     str(image_path), '--image-review', str(review_path)], capture_output=True, text=True,
                     env={**os.environ, 'WIKICONTEXT_URL': cfg['url'],
                          'WIKICONTEXT_USER_EMAIL': cfg['email'], 'WIKICONTEXT_USER_PASSWORD': cfg['password']})

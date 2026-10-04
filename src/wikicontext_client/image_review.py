@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import warnings
 
-import wc
+from . import cli as wc
 
 EXTENSIONS = {'.png': 'PNG', '.jpg': 'JPEG', '.jpeg': 'JPEG', '.webp': 'WEBP'}
 MAX_PIXELS = 50_000_000

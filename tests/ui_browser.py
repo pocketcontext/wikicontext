@@ -17,8 +17,7 @@ import urllib.request
 import urllib.error
 
 from integration import ROOT, credentials, server
-sys.path.insert(0, str(ROOT / 'skills/wikicontext/scripts'))
-from ingest import multipart
+from wikicontext_client.ingest import multipart
 
 
 def seed(request):

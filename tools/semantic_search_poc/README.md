@@ -19,7 +19,8 @@ python3 -m venv "$HOME/.cache/wikicontext-search-poc-venv"
 source "$HOME/.cache/wikicontext-search-poc-venv/bin/activate"
 export WIKICONTEXT_URL=https://wiki.pocketcontext.com
 export WIKICONTEXT_USER_EMAIL=you@pocketcontext.com
-python skills/wikicontext/scripts/wc.py login --google
+python -m pip install .
+wikicontext login --google
 ```
 
 If Python's venv/ensurepip module is unavailable, install the operating system's

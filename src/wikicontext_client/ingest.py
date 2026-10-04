@@ -13,8 +13,8 @@ import tempfile
 import urllib.error
 import urllib.request
 
-import wc
-import image_review as reviewed_image
+from . import cli as wc
+from . import image_review as reviewed_image
 
 AUDIO = {'.mp3', '.m4a', '.wav', '.flac', '.ogg', '.webm', '.mp4', '.mpeg', '.mpga', '.opus'}
 TEXT = {'.txt', '.md', '.markdown', '.csv', '.json', '.rst', '.log'}

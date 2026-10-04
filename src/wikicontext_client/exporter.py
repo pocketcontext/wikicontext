@@ -8,7 +8,7 @@ import re
 import tempfile
 import urllib.parse
 import urllib.request
-import wc
+from . import cli as wc
 
 MANIFEST = '.wikicontext-export.json'
 JOURNAL = '.wikicontext-export-journal.json'

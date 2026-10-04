@@ -1,7 +1,7 @@
 """Queries against committed knowledge, never against generated Markdown."""
 import math
 import re
-import wc
+from . import cli as wc
 
 
 def rows(cfg, sql):

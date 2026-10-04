@@ -14,11 +14,8 @@ import unittest
 import unittest.mock
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/wikicontext/scripts'))
 # This test filename shadows the implementation when run as a script.
-spec = importlib.util.spec_from_file_location('ingestion', Path(sys.path[0]) / 'ingest.py')
-ingest = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(ingest)
+from wikicontext_client import ingest
 UPLOAD_SOURCE = ingest.upload_source
 
 

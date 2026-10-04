@@ -9,9 +9,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/wikicontext/scripts'))
-import exporter as exp
-import wc
+from wikicontext_client import exporter as exp
+from wikicontext_client import cli as wc
 
 
 class ExportTests(unittest.TestCase):

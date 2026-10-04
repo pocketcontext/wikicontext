@@ -3,7 +3,7 @@
 ## Preserve, extract, synthesize, publish
 
 1. Authenticate and verify the live schema. Group inputs into at most five sources per synthesis batch.
-2. Run `wc.py ingest PATH` for each file. Exact bytes deduplicate by server SHA-256, even after lost upload responses. UTF-8 text/Markdown, CSV, JSON, RST and log files are read fully; PDFs use local `pdftotext`; reviewed PNG/JPEG/WebP images use `--image-review` and local Pillow validation; audio uses `ffmpeg`, `ffprobe` and Groq. Default audio normalization and its duration/size checks happen before upload; failures leave the local input untouched. Other extraction failures retain the uploaded source for retry. Git LFS pointer files fail before upload.
+2. Run `wikicontext ingest PATH` for each file. Exact bytes deduplicate by server SHA-256, even after lost upload responses. UTF-8 text/Markdown, CSV, JSON, RST and log files are read fully; PDFs use local `pdftotext`; reviewed PNG/JPEG/WebP images use `--image-review` and local Pillow validation; audio uses `ffmpeg`, `ffprobe` and Groq. Default audio normalization and its duration/size checks happen before upload; failures leave the local input untouched. Other extraction failures retain the uploaded source for retry. Git LFS pointer files fail before upload.
 3. A complete rendition is reused across machines. Partial extraction resumes against immutable passage ordinals. Transcription output is cached under the user's private XDG cache before writes so retries do not normally retranscribe. Losing that cache during a partial audio upload may produce a differing transcript; use a new `--version` instead of overwriting evidence. Inspect and delete local extraction caches when their retention is no longer needed.
 4. Retrieve passages with SQL, ordered by rendition and ordinal. Read all chunks. Retrieve the latest publication manifest and the published pages relevant to the new sources. Use scoped full-text search for title/summary/body matches, then traverse citations and links with SQL. Keep the returned publication pinned when paging and retrieving evidence. Do not assume latest-created page revisions are published.
 5. Choose a stable, descriptive run key. Query that key before creating it. If published, report the existing result. If staging, inspect staged revisions/citations/links and resume missing work. For a conflicting or unsuitable immutable draft, cancel the run with expected_revision and create a new run.
@@ -16,7 +16,7 @@
 
 1. View each original at sufficient resolution to read it. Preserve its exact bytes; any crop or resize used for inspection is a temporary derivative. Install Pillow in the client Python environment. Only static PNG/JPEG/WebP images with matching filename extensions are supported, up to 50 million pixels and 16,384 pixels on each axis. Validation decodes the file before any writes.
 2. Prepare a private review JSON file matching the original SHA-256 and encoded dimensions. Record a truthful processor/reviewer identifier. Separate `transcription` (literal visible text), `description` (visual relationships and explicitly identified interpretation) and `caption` passages. Each passage needs a bounded `[x, y, width, height]` pixel region in the original encoded orientation, before EXIF rotation. Use the original coordinate system even if inspecting a crop. Label unreadable text and uncertainty instead of inventing values; preserve table/chart associations, units and assumptions.
-3. Run `wc.py ingest IMAGE --image-review REVIEW.json --version v1`. Missing or invalid reviews fail before upload. The original deduplicates by its SHA-256. Reviewed passages use an immutable `image-review` rendition, whose notes retain dimensions, format, image/review hashes and optional source relationship metadata. Identical review content resumes partial writes or reuses a completed rendition. Changing the review under the same version conflicts, including after completion; review the correction and use a new version.
+3. Run `wikicontext ingest IMAGE --image-review REVIEW.json --version v1`. Missing or invalid reviews fail before upload. The original deduplicates by its SHA-256. Reviewed passages use an immutable `image-review` rendition, whose notes retain dimensions, format, image/review hashes and optional source relationship metadata. Identical review content resumes partial writes or reuses a completed rendition. Changing the review under the same version conflicts, including after completion; review the correction and use a new version.
 4. For screenshots supplementing audio, supply the existing audio source ID in `related_source` and an ordered `sequence` from 1 to 1,000,000 (which requires `related_source`). These are rendition metadata, not a new schema relationship. Keep the audio and transcript unchanged. Do not use `supersedes`. Treat screenshot filenames/capture dates as metadata unless explicitly aligned to the recording. Selected screenshots are not necessarily the complete deck. Extract the relevant slide region; omit unrelated browser controls, chat and participant tiles. Keep captions separate because they may refer to preceding slides and are incomplete speech evidence.
 5. Read the resulting passages, compare them with the related published pages and source evidence, and synthesize cited revisions through the ordinary publication workflow. Explicitly distinguish source claims from analyst calculations. Use authenticated original downloads to verify citations. The browser reader also previews PNG/JPEG/WebP originals on source and passage pages and in citation dialogs; other image formats remain download-only. Extraction alone does not complete ingestion.
 
@@ -26,7 +26,7 @@ No automated OCR or external vision-service request is made by this command. Ima
 
 By default, the client converts audio to mono with 16 kHz encoder input and 16 kbps Opus in an `.ogg` file before applying upload limits. It verifies the output duration against the selected first audio stream within one second and enforces a conservative 25 MB transcription limit before uploading. WikiContext stores this normalized file as its immutable source and sends exactly those bytes to Groq, requesting timestamped `verbose_json` using `whisper-large-v3-turbo`. The input recording remains untouched locally. Normalization selects the first audio stream, resets its timeline to zero and discards video; separate streams are not combined. If stream-duration metadata is unavailable, the client measures decoded audio time locally before conversion. Opus decoders may report 48 kHz even though the encoder input was resampled to 16 kHz. Inputs whose normalized output exceeds the limit fail explicitly; do not silently truncate.
 
-Use `wc.py ingest PATH --audio-storage original` to preserve the input recording as the uploaded source instead. This mode retains the 100 MiB source upload limit and sends a separate temporary normalized derivative to Groq. Non-audio ingestion preserves input bytes as before.
+Use `wikicontext ingest PATH --audio-storage original` to preserve the input recording as the uploaded source instead. This mode retains the 100 MiB source upload limit and sends a separate temporary normalized derivative to Groq. Non-audio ingestion preserves input bytes as before.
 
 Normalized audio uses a private local cache under `$XDG_CACHE_HOME/wikicontext/audio` (default `~/.cache/wikicontext/audio`) so retries reuse the same encoded bytes across upload/transcription failures and encoder upgrades. Conversion uses FFmpeg bit-exact flags to support repeatable output with the same encoder build and settings; retained cached bytes are the retry guarantee. Without that cache, different encoder builds may produce different bytes and therefore distinct source hashes. Before transcription, the normalized Ogg embeds the input SHA-256, conversion profile and converter version. Private cache metadata and later rendition notes also record the input filename and normalization settings; these describe provenance and do not mean the original recording bytes were uploaded. Do not claim cross-encoder deduplication. Inspect and remove private normalization and extraction caches when no longer needed; retaining the normalization cache supports reliable retries. See [Groq's speech-to-text contract](https://console.groq.com/docs/speech-to-text).
 
@@ -44,8 +44,8 @@ Home belongs to an immutable publication; `/#/` remains the dynamic home route.
 Create a staging run or reuse your current staging run, then select a page:
 
 ```sh
-python3 scripts/wc.py stage-home RUN_ID_________ --home onboarding --expected-revision 1
-python3 scripts/wc.py publish RUN_ID_________ --expected-revision 2
+wikicontext stage-home RUN_ID_________ --home onboarding --expected-revision 1
+wikicontext publish RUN_ID_________ --expected-revision 2
 ```
 
 Use actual returned IDs and run revisions. `stage-home` resolves the slug and captures
@@ -66,8 +66,8 @@ unless an explicit `--home-base PAGE_ID` is supplied after review. Use `--home-b
 when you expect no configured home. After reassessment, an explicit example is:
 
 ```sh
-python3 scripts/wc.py stage-home RUN_ID_________ --home onboarding --home-base PAGE_ID________ --expected-revision 2
-python3 scripts/wc.py publish RUN_ID_________ --expected-revision 3
+wikicontext stage-home RUN_ID_________ --home onboarding --home-base PAGE_ID________ --expected-revision 2
+wikicontext publish RUN_ID_________ --expected-revision 3
 ```
 
 For a reviewed immediate choice, `publish` also accepts `--home SLUG` or

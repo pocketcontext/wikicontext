@@ -1,0 +1,13 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["wikicontext-client"]
+#
+# [tool.uv.sources]
+# wikicontext-client = { git = "https://github.com/pocketcontext/wikicontext.git", rev = "3eaa24263246bf279ba5b007e09fdeb47216ecbb" }
+# ///
+"""Standalone launcher for the pinned wikicontext client."""
+from wikicontext_client.cli import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())

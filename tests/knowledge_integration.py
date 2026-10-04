@@ -6,9 +6,8 @@ import sys
 from unittest.mock import patch
 from integration import ROOT, credentials, server
 
-sys.path.insert(0, str(ROOT / 'skills/wikicontext/scripts'))
-import knowledge
-import wc
+from wikicontext_client import knowledge
+from wikicontext_client import cli as wc
 
 
 def main():

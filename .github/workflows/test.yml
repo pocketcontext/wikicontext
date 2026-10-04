@@ -18,6 +18,13 @@ jobs:
         with:
           path: wikicontext
           persist-credentials: false
+      - name: Install packaged CLI
+        run: |
+          python3 -m venv "$RUNNER_TEMP/client-venv"
+          "$RUNNER_TEMP/client-venv/bin/python" -m pip install uv ./wikicontext
+          echo "$RUNNER_TEMP/client-venv/bin" >> "$GITHUB_PATH"
+      - name: Test standalone launcher
+        run: python3 wikicontext/tests/launcher.py
       - name: Test deployment orchestration
         run: python3 wikicontext/tests/deploy_workflow.py
       - name: Test complete evidence backups
@@ -73,6 +80,8 @@ jobs:
         run: python3 wikicontext/tests/deploy.py --binary pocketcontext/bin/pocketcontext
       - name: Test installable skill
         run: python3 wikicontext/tests/skill.py --binary pocketcontext/bin/pocketcontext
+      - name: Test instrumented uploads and commands
+        run: python3 wikicontext/tests/skill.py --binary pocketcontext/bin/pocketcontext --trace
       - name: Test access, publication and evidence workflows
         run: |
           python3 wikicontext/tests/auth.py --binary pocketcontext/bin/pocketcontext

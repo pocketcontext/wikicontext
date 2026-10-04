@@ -10,9 +10,8 @@ from unittest.mock import patch
 import os
 from integration import server, credentials
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'skills/wikicontext/scripts'))
-import wc
-import ingest
+from wikicontext_client import cli as wc
+from wikicontext_client import ingest
 
 
 def main():
