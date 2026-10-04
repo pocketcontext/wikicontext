@@ -1,3 +1,25 @@
+## Packaged CLI and opt-in tracing — 4 October 2026
+
+Deployed source `1a625b7f84370abc2c4719346c27e287a7282165` at `https://wiki.pocketcontext.com`.
+Image `sha256:390cae0cadc9828bbecd63e00e88fa4019c3c0157dff37e589d85227af9d1028`; server pin `91d7ef14b02a476b2212aa80b365b6c024a19c15` is unchanged.
+The standalone `wikicontext` uv launcher pins package `1561039568946564b3027a51be0e8de596683b9b`.
+Old script entry points are removed; no compatibility wrappers are provided.
+
+[Release CI](https://github.com/pocketcontext/wikicontext/actions/runs/37193946894) passed application, browser, container configuration,
+smoke and populated recovery gates before publication. Copied remote launchers
+passed isolated workflow and tracing tests. A predeployment backup was verified;
+the update used the gated CI locked wrapper. Exact runtime revision, one writer,
+existing resource settings and disabled automatic updates were verified.
+Public health and anonymous SQL-schema rejection passed; the installed CLI's
+live schema check passed. Eight source apps passed a live `SELECT 1` capture
+with paired client/server traces and SQL text excluded. No business records
+were created; diagnostic traces were uploaded to ObserveContext.
+
+VaultContext was excluded from this migration. A separate VaultContext release
+was observed during the window and was left untouched. Five other unrelated
+containers retained their IDs, images and settings. The private scaffold records
+the coordinated release matrix and verification evidence.
+
 # WikiContext deployment
 
 ## Live reader release
