@@ -135,6 +135,7 @@ python3 tests/realtime_access.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/realtime_publication.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/oauth_integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/skill.py --binary /absolute/path/to/pinned/pocketcontext
+python3 tests/skill.py --binary /absolute/path/to/pinned/pocketcontext --trace
 python3 tests/knowledge_integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/search_integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/ingest_integration.py --binary /absolute/path/to/pinned/pocketcontext
