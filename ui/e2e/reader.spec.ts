@@ -162,6 +162,9 @@ test("published reader: navigation, evidence, safe Markdown, live updates, histo
     .locator(".page-list")
     .getByRole("link", { name: "Observatory", exact: true })
     .click();
+  // Wait for hash navigation to finish before asserting keyboard focus.
+  await expect(page.getByRole("heading", { name: "Observatory", exact: true })).toBeVisible();
+  await expect(search).toBeVisible();
   await search.focus();
   await page.keyboard.press("Tab");
   expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe(
