@@ -207,7 +207,13 @@ Uploads and protected downloads still use PocketBase's ordinary authenticated AP
 original checksums are streamed from its configured filesystem backend.
 
 With this contract enabled, startup preserves a healthy local database or restores
-an absent database from Litestream. It never restores the legacy complete archive,
+an absent database from Litestream. Before HTTP starts, the supervised child calls
+Litestream's private mode-0600 IPC socket with `sync -wait`, forcing database
+initialization and a completed initial remote sync. Startup intentionally requires
+a reachable replica; missing IPC or failed synchronization refuses serving.
+Google-only fresh deployments bootstrap the database with migrations before this
+handshake. This closes Litestream 0.5.17's early-stop gap: before its first monitor
+tick, an uninitialized database otherwise skips final replication on shutdown. It never restores the legacy complete archive,
 and no archive scheduler runs. Before opening the server, it streams every original
 referenced by SQLite from S3 and verifies its recorded SHA-256. Missing, corrupt or
 inaccessible evidence refuses startup. This costs a full evidence read on restart;
@@ -309,3 +315,9 @@ python3 tests/object_storage_recovery.py --verify-source /stopped/data.db --veri
 
 The comparator checks full integrity and logical schema/table/row contents without
 printing source data. Keep the stopped source intact if comparison fails.
+
+The actual-image S3 drill uses a one-hour remote sync interval and performs API
+writes after the initial handshake. It strictly restores the replica into a
+separate volume, compares every logical database record with the stopped source,
+and only then destroys the source volume and starts the recovered writer. It also
+checks missing-IPC startup refusal and fresh Google-only database initialization.

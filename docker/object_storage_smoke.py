@@ -21,6 +21,12 @@ try:
   time.sleep(1)
  else:raise RuntimeError('MinIO fixture failed')
  env=s.once_env({'WIKICONTEXT_S3_BUCKET':'files','WIKICONTEXT_S3_ENDPOINT':f'http://{minio}:9000','WIKICONTEXT_S3_REGION':'us-east-1','WIKICONTEXT_S3_ACCESS_KEY_ID':access,'WIKICONTEXT_S3_SECRET_ACCESS_KEY':secret,'LITESTREAM_BUCKET':'replica','LITESTREAM_PATH':'test/data','LITESTREAM_ENDPOINT':f'http://{minio}:9000','LITESTREAM_REGION':'us-east-1','LITESTREAM_ACCESS_KEY_ID':access,'LITESTREAM_SECRET_ACCESS_KEY':secret,'LITESTREAM_SYNC_INTERVAL':'1h'})
+ # Calling the supervised child without its private control socket must not serve.
+ probe=['run','--rm']
+ for key in env: probe.extend(['-e',key])
+ status,output=s.docker(*probe,args.image,'serve',env=env,ok=False)
+ s.check(status != 0 and 'initial replica synchronization failed' in output and 'starting server on port 80' not in output,
+     'missing replication IPC refuses HTTP startup')
  with tempfile.TemporaryDirectory(prefix='wiki-image-s3-') as td:
   tmp=pathlib.Path(td);first=network+'-a';second=network+'-b'
   s.run_app(args.image,first,first,env,network);base=s.wait_up(first)
@@ -29,15 +35,35 @@ try:
   client=s.Client(base,'restore@example.test',password,tmp/'home-a')
   doc,meta=s.write_record(client,user);s.check_records(client,doc,meta)
   s.check(s.docker('exec',first,'sh','-c','find /storage/pb_data/storage -type f 2>/dev/null || true')[1].strip()=='','no local originals')
+  s.check('initial replica synchronization complete' in s.logs(first),'HTTP starts only after initial remote synchronization')
   s.stop(first)
   s.check('uploaded verified database and originals' not in s.logs(first),'no complete archive supervisor used')
+  # Restore without starting a second writer. Exit zero alone is not proof of sync.
+  s.docker('volume','create',second);s.volumes.append(second)
+  restore_args=['run','--rm','--network',network,'-v',f'{second}:/storage']
+  for key in env: restore_args.extend(['-e',key])
+  s.docker(*restore_args,'--entrypoint','sh',args.image,'-c',
+      'mkdir -p /storage/pb_data; exec litestream restore -config /etc/litestream.yml /storage/pb_data/data.db',env=env)
+  # Read both stopped databases in the image's SQLite runtime, with no raw data output.
+  s.docker('run','--rm','-v',f'{first}:/source:ro','-v',f'{second}:/restored:ro',
+      '-v',str(root/'tests')+':/tests:ro','--entrypoint','sh',args.image,'-c',
+      'cp -a /source/pb_data /tmp/source; cp -a /restored/pb_data /tmp/restored; '
+      'exec python3 /tests/object_storage_recovery.py --verify-source /tmp/source/data.db --verify-restored /tmp/restored/data.db')
+  s.check(True,'entire recovered database equals stopped source before volume destruction')
   s.docker('rm',first);s.docker('volume','rm',first);s.volumes.remove(first)
-  s.run_app(args.image,second,second,env,network);base=s.wait_up(second)
+  s.run_app(args.image,second,second,env,network);s.volumes.remove(second);base=s.wait_up(second)
   client=s.Client(base,'restore@example.test',password,tmp/'home-b');s.check_records(client,doc,meta)
   s.check('restored verified database and originals' not in s.logs(second),'no old archive restore')
-  s.check('database present after the restore step' in s.logs(second),'Litestream restored DB')
+  s.check('database exists in the volume: no restore' in s.logs(second),'verified standalone Litestream restore preserved by startup')
   s.stop(second);s.check_logs(second)
   s.check('full-backups/' not in s.docker('exec','-e','MC_HOST_test',minio,'mc','ls','--recursive','test/replica',env=mc)[1],'no complete archives emitted')
+ # No-superuser deployments still create a database before the startup handshake.
+ bootstrap=network+'-google-only'
+ bootstrap_env={key:value for key,value in env.items() if not key.startswith('WIKICONTEXT_SUPERUSER_')}
+ bootstrap_env['LITESTREAM_PATH']='google-only/data'
+ s.run_app(args.image,bootstrap,bootstrap,bootstrap_env,network);s.wait_up(bootstrap)
+ s.check('initial replica synchronization complete' in s.logs(bootstrap),'Google-only fresh database synchronized before HTTP')
+ s.stop(bootstrap)
  failed=False
  print('PASS actual image entrypoint S3 upload + Litestream final sync + destroy source volume + fresh-volume restore')
 finally:s.report_and_clean(failed)

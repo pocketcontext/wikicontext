@@ -33,6 +33,15 @@ app_flags() {
 }
 
 serve() {
+    if [ -n "${WIKICONTEXT_S3_BUCKET:-}" ] && [ "${LITESTREAM_DISABLED:-}" != true ]; then
+        # Litestream 0.5.17 initializes the DB lazily on its first monitor tick.
+        # An earlier shutdown skips final sync. Force this supervisor's database
+        # initialization and remote baseline before the application can accept writes.
+        if ! litestream sync -wait -timeout 60 -socket /run/litestream.sock "$DB_PATH" >/dev/null 2>&1; then
+            die "initial replica synchronization failed; refusing to serve"
+        fi
+        log "initial replica synchronization complete"
+    fi
 	# The server needs neither the replica credentials nor the superuser password.
 	# Litestream copies its credentials into AWS_* for its own use; drop those as well.
 	unset LITESTREAM_ACCESS_KEY_ID LITESTREAM_SECRET_ACCESS_KEY \
@@ -135,6 +144,11 @@ elif [ -n "${WIKICONTEXT_SUPERUSER_PASSWORD:-}" ]; then
 fi
 
 if [ "$replicate" = true ]; then
+    # Google-only deployments need a database before the IPC startup sync too.
+    if [ -n "${WIKICONTEXT_S3_BUCKET:-}" ] && [ ! -f "$DB_PATH" ]; then
+        # shellcheck disable=SC2046
+        "$SERVER" migrate up $(app_flags) || die "initial database migration failed"
+    fi
 	log "starting Litestream, which starts and supervises the server"
 	if [ -n "${WIKICONTEXT_S3_BUCKET:-}" ]; then
 		exec litestream replicate -config "$LITESTREAM_CONFIG_FILE" -exec "$SELF serve"
