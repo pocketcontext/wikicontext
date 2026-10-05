@@ -8,6 +8,9 @@ routerAdd("GET", "/up", (e) => require(`${__hooks}/deploy.js`).up(e), $apis.skip
 // Runs for every command (serve, superuser, migrate) after the database is open and the settings are loaded.
 onBootstrap((e) => {
   e.next();
+  // A durable server maintenance freeze keeps the stored configuration authoritative.
+  // In particular, do not attempt settings or OAuth writes during a frozen restart.
+  if (e.app.store().get("pocketcontextMaintenanceReadOnly") === true) return;
   require(`${__hooks}/deploy.js`).settings(e.app);
   require(`${__hooks}/deploy.js`).googleOAuth(e.app);
 });

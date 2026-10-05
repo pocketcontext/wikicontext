@@ -141,6 +141,8 @@ python3 tests/search_integration.py --binary /absolute/path/to/pinned/pocketcont
 python3 tests/ingest_integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/export_integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/deploy.py --binary /absolute/path/to/pinned/pocketcontext
+python3 tests/maintenance.py --binary /absolute/path/to/pinned/pocketcontext
+python3 tests/maintenance_entrypoint.py
 python3 tests/backup_integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/oauth.py
 python3 tests/client.py
@@ -185,11 +187,14 @@ Regenerate the SQL reference only after reviewing intentional changes: `tests/sk
 
 ## Existing wiki migration
 
+The runtime migration freeze and its server-pin release prerequisite are described
+in [deployment procedures](docs/deployment.md#runtime-migration-freeze).
+
 The existing `wiki/` checkout has not been modified or migrated. Import originals through ordinary API ingestion, retrieve actual Git LFS audio rather than its pointer, and import authored pages as explicitly labelled legacy revisions with mapped evidence. Preserve slugs, original citations and legacy log text; do not claim imported legacy logs are server audit events. Compare a fresh generated vault before switching Obsidian. Never use direct SQLite writes or production data for migration tests. A bulk legacy importer is not supplied in this version.
 
 ## Infrastructure provenance
 
-Authentication and portable OAuth client adapted from RaiseContext `44f8f10537388f9a934a2bc1800d3df6a046c580`; revision/concurrency and realtime test patterns from TaskContext `5bb214ef32fcffa9a42bb1de2d13cfd4052dc80f`; protected originals, complete backups and container/deployment patterns from AccountContext `2b78c0f38680381376b0ce485312ff659037a13f`. WikiContext's domain schema and publication/export model are independent. Server pin: `91d7ef14b02a476b2212aa80b365b6c024a19c15`.
+Authentication and portable OAuth client adapted from RaiseContext `44f8f10537388f9a934a2bc1800d3df6a046c580`; revision/concurrency and realtime test patterns from TaskContext `5bb214ef32fcffa9a42bb1de2d13cfd4052dc80f`; protected originals, complete backups and container/deployment patterns from AccountContext `2b78c0f38680381376b0ce485312ff659037a13f`. WikiContext's domain schema and publication/export model are independent. Server pin: `94d4549b4cffe7f2754e65467efdd9be16450a25`.
 
 ## Request observability
 

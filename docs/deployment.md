@@ -132,6 +132,58 @@ ordinary overlapping ONCE update. The bootstrap takes only a root-owned, mode-06
 private payload and bounded registry credentials; remove its temporary key after
 initial deployment.
 
+## Runtime migration freeze
+
+The application pins PocketContext `94d4549b4cffe7f2754e65467efdd9be16450a25`,
+which provides the runtime maintenance API. Deploy an image with this pin before
+attempting a production freeze. Older images do not expose the API.
+
+An operator with an existing valid superuser token reads
+`GET /api/context/maintenance`, then sends `PUT /api/context/maintenance` with
+`{"readOnly":true,"expectedGeneration":N}`, using the returned generation.
+Wait for `state: "read_only"` before taking the final migration snapshot. A draining
+or failed transition is not a completed freeze. Ordinary users cannot change this
+state, and superusers do not bypass the content freeze. Keep the operator token
+private and available for the explicit unfreeze operation.
+
+Existing authenticated sessions retain SQL queries, searches and protected file
+reads. Token refresh and protected file-token requests remain available. Password
+login, OAuth login/linking, signup, uploads, publication, batch writes and other
+mutations are unavailable while frozen. Complete interactive login before the
+freeze. This is a migration maintenance window, not permanent public read-only
+hosting.
+
+The server owns `pb_data/maintenance.json`; retain it with the active volume. On a
+frozen restart, the container requires the existing database and skips archive
+restore, replica restore and superuser upsert. The bootstrap hook preserves stored
+settings and OAuth configuration instead of applying changed environment values.
+Invalid maintenance state stops startup. Do not remove or edit the marker to
+unfreeze the process: send the same PUT with `readOnly:false` and the latest
+generation after confirming this host remains the authorized writer.
+
+This flag freezes application database and HTTP mutations, not independent backup
+or Litestream processes. Those publishers keep running until explicitly fenced.
+Before promoting a recovered host, stop the old replica publisher and deployment
+automation, and independently verify the final database and originals. Never
+restart a stale source after destination writes have begun. The marker is separate
+from `data.db` and is not transferred by database-only Litestream recovery; enforce
+destination maintenance before making the recovered application reachable.
+
+A cold Litestream restore supplies only `data.db`. Frozen startup also requires
+PocketBase's compatible `auxiliary.db`; it cannot initialize a missing auxiliary
+database while frozen. Copy that database consistently from the stopped source,
+or complete a controlled bootstrap on an isolated destination before installing
+the freeze. Do not expose that destination or attach a competing replica publisher
+during preparation. A same-volume frozen container restart already retains both
+databases and is a different operation from cold replica recovery.
+
+Validate with synthetic isolated data:
+
+```sh
+python3 tests/maintenance_entrypoint.py
+python3 tests/maintenance.py --binary /absolute/path/to/maintenance-capable/pocketcontext
+```
+
 ## Attribution
 
 Container, Litestream, immutable-file backup, smoke/MinIO fixture, bootstrap and

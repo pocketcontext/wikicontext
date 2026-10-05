@@ -47,7 +47,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
       - name: Show the image
         run: |
-          docker image inspect wikicontext:ci --format '{{json .Config}}' | python3 -m json.tool
+          docker image inspect wikicontext:ci --format '{{.Id}}'
           docker run --rm --entrypoint sh wikicontext:ci -c 'set -eu; litestream version; pocketcontext --version; cat /app/POCKETCONTEXT_VERSION; find /app /usr/local/bin -type f | sort; test ! -e /app/pb_hooks/.gitkeep'
       - name: Startup errors for missing configuration
         run: python3 docker/smoke.py config --image wikicontext:ci

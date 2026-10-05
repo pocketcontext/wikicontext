@@ -274,6 +274,62 @@ def check_records(client, document, metadata):
         check(response.read() == evidence, 'protected original bytes recovered exactly')
 
 
+def maintenance_roundtrip(name, base, admin, client, document, metadata):
+    """Exercise the real entrypoint with a durable freeze and existing sessions."""
+    step('freezing application writes through the superuser maintenance API')
+    endpoint = '/api/context/maintenance'
+    status, _, current = http('GET', base + endpoint, token=admin)
+    check(status == 200 and current.get('state') == 'writable', 'maintenance starts writable')
+    change = {'readOnly': True, 'expectedGeneration': current['generation']}
+    status, _, _ = http('PUT', base + endpoint, change, token=client.token)
+    check(status in (401, 403), 'ordinary users cannot freeze the application')
+    status, _, frozen = http('PUT', base + endpoint, change, token=admin)
+    check(status == 200 and frozen.get('state') == 'read_only', 'freeze finishes before acknowledgement')
+
+    def verify_frozen():
+        status, _, state = http('GET', client.base + endpoint, token=admin)
+        check(status == 200 and state.get('state') == 'read_only'
+              and state.get('generation') == frozen['generation'], 'durable freeze generation is preserved')
+        check_records(client, document, metadata)
+        status, _, refreshed = http('POST', client.base + '/api/collections/users/auth-refresh', {}, token=client.token)
+        check(status == 200 and bool(refreshed.get('token')), 'existing user sessions refresh while frozen')
+        secret(refreshed['token'])
+        for identity in (client.token, admin):
+            status, _, _ = http('POST', client.base + '/api/collections/pages/records',
+                {'slug': 'blocked-maintenance-write', 'kind': 'concept'}, token=identity)
+            check(status == 503, 'ordinary and superuser content writes are blocked')
+            status, _, _ = http('POST', client.base + '/api/batch', {'requests': [
+                {'method': 'POST', 'url': '/api/collections/pages/records',
+                 'body': {'slug': 'blocked-maintenance-batch', 'kind': 'concept'}},
+            ]}, token=identity)
+            check(status == 503, 'batch writes are blocked during maintenance')
+        status, _, _ = http('POST', client.base + '/api/collections/users/auth-with-password', {})
+        check(status == 503, 'new password logins are unavailable while frozen')
+
+    verify_frozen()
+    stop(name)
+    step('restarting the frozen container without provisioning or restoring its database')
+    docker('start', name)
+    base = wait_up(name)
+    # Keep the original sessions: constructing Client would attempt password login.
+    client.base = base
+    verify_frozen()
+    text = check_logs(name)
+    check('read-only maintenance state: skipping superuser provisioning' in text,
+          'frozen entrypoint skips superuser provisioning')
+    status, _, _ = http('PUT', base + endpoint,
+        {'readOnly': False, 'expectedGeneration': current['generation']}, token=admin)
+    check(status == 409, 'stale generation cannot unfreeze the application')
+    status, _, thawed = http('PUT', base + endpoint,
+        {'readOnly': False, 'expectedGeneration': frozen['generation']}, token=admin)
+    check(status == 200 and thawed.get('state') == 'writable', 'existing operator session explicitly unfreezes')
+    status, _, _ = http('POST', base + '/api/collections/pages/records',
+        {'slug': 'maintenance-thawed-' + secrets.token_hex(6), 'kind': 'concept'}, token=client.token)
+    check(status == 200, 'ordinary content writes resume after explicit unfreeze')
+    check_records(client, document, metadata)
+    return base
+
+
 def check_logs(name, text=None):
     text = logs(name) if text is None else text
     found = [index for index, value in enumerate(hidden) if value in text]
@@ -376,6 +432,9 @@ def smoke(image, tmp, run_id):
     check_records(client, organization, unused)
     text = check_logs(name)
     check('pbinstall' not in text, 'the logs contain no superuser installation link')
+    # The ordinary restart intentionally upserts the operator and rotates its token.
+    token = superuser_token(base, env['WIKICONTEXT_SUPERUSER_EMAIL'], env['WIKICONTEXT_SUPERUSER_PASSWORD'])
+    maintenance_roundtrip(name, base, token, client, organization, unused)
     stop(name)
 
 
