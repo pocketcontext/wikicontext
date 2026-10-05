@@ -268,3 +268,44 @@ and run `python3 tests/object_storage_recovery.py --binary PINNED_SERVER
 --synthetic-replica-bucket TEST_REPLICA` on one line. For the actual image gate,
 run `python3 docker/object_storage_smoke.py --image TEST_IMAGE --minio-image
 LOCAL_MINIO_FIXTURE` on one line. Both use synthetic records and isolated replicas.
+
+### Prepared live experiment verification
+
+`tools/verify_experiment.py` is restricted to `https://wiki-v2.pocketcontext.com`
+and the `wikicontext-v2-files` / `wikicontext-v2-replica` buckets. With experiment
+credentials in the process environment and `boto3` installed, an explicitly
+approved live check is:
+
+```sh
+python3 tools/verify_experiment.py --api-and-r2 --manifest /tmp/wiki-v2-synthetic-manifest.json
+```
+
+This creates a disposable default-users account with maintenance credentials,
+then uploads one synthetic original as that ordinary user. It verifies the server
+hash, protected download, anonymous denial and exact remote bytes. It disables the
+disposable account in a finalizer. Immutable synthetic source evidence is retained.
+Only check outcomes are printed; synthetic object metadata goes into a mode-0600
+manifest, never credentials. Replica-object presence is checked separately and is
+not proof that the latest write replicated.
+
+To verify no local original remains, use the same script and synthetic manifest
+inside the experimental container or against its mounted data directory:
+
+```sh
+python3 verify_experiment.py --check-local-storage /storage/pb_data --manifest /tmp/wiki-v2-synthetic-manifest.json
+```
+
+The script and manifest can be copied into the experimental container's `/tmp`
+for this check and removed afterward. Do not print container environment or ONCE
+labels when selecting the container. No live check is performed by preparing or
+running `--help` on this script.
+
+A migration gate must additionally stop the source and compare its database with
+a fresh replica restore before destination activation:
+
+```sh
+python3 tests/object_storage_recovery.py --verify-source /stopped/data.db --verify-restored /restored/data.db
+```
+
+The comparator checks full integrity and logical schema/table/row contents without
+printing source data. Keep the stopped source intact if comparison fails.
