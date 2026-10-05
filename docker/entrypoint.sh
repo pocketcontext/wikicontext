@@ -33,6 +33,15 @@ app_flags() {
 }
 
 serve() {
+    if [ -n "${WIKICONTEXT_S3_BUCKET:-}" ] && [ "${LITESTREAM_DISABLED:-}" != true ]; then
+        # Litestream 0.5.17 initializes the DB lazily on its first monitor tick.
+        # An earlier shutdown skips final sync. Force this supervisor's database
+        # initialization and remote baseline before the application can accept writes.
+        if ! litestream sync -wait -timeout 60 -socket /run/litestream.sock "$DB_PATH" >/dev/null 2>&1; then
+            die "initial replica synchronization failed; refusing to serve"
+        fi
+        log "initial replica synchronization complete"
+    fi
 	# The server needs neither the replica credentials nor the superuser password.
 	# Litestream copies its credentials into AWS_* for its own use; drop those as well.
 	unset LITESTREAM_ACCESS_KEY_ID LITESTREAM_SECRET_ACCESS_KEY \
@@ -58,6 +67,17 @@ if [ -n "${WIKICONTEXT_GOOGLE_CLIENT_ID:-}" ] && [ -z "${WIKICONTEXT_GOOGLE_CLIE
 elif [ -n "${WIKICONTEXT_GOOGLE_CLIENT_SECRET:-}" ] && [ -z "${WIKICONTEXT_GOOGLE_CLIENT_ID:-}" ]; then
 	die "WIKICONTEXT_GOOGLE_CLIENT_SECRET requires WIKICONTEXT_GOOGLE_CLIENT_ID"
 fi
+
+# Check the complete S3 contract before touching replication state.
+s3_any="${WIKICONTEXT_S3_BUCKET:-}${WIKICONTEXT_S3_ENDPOINT:-}${WIKICONTEXT_S3_REGION:-}${WIKICONTEXT_S3_ACCESS_KEY_ID:-}${WIKICONTEXT_S3_SECRET_ACCESS_KEY:-}"
+if [ -n "$s3_any" ]; then
+    for name in WIKICONTEXT_S3_BUCKET WIKICONTEXT_S3_ENDPOINT WIKICONTEXT_S3_REGION WIKICONTEXT_S3_ACCESS_KEY_ID WIKICONTEXT_S3_SECRET_ACCESS_KEY; do
+        eval "value=\${$name:-}"
+        [ -n "$value" ] || die "incomplete object storage configuration"
+    done
+    case "${WIKICONTEXT_S3_FORCE_PATH_STYLE:-true}" in true|false) ;; *) die "invalid object storage path style" ;; esac
+fi
+s3_any= value=
 
 if [ "${1:-}" = serve ]; then
 	serve
@@ -125,7 +145,9 @@ else
 fi
 
 if [ "$replicate" = true ] && [ "$frozen" != true ]; then
-	python3 /usr/local/bin/wikicontext-backup.py restore || die "complete evidence restore failed"
+	if [ -z "${WIKICONTEXT_S3_BUCKET:-}" ]; then
+		python3 /usr/local/bin/wikicontext-backup.py restore || die "complete evidence restore failed"
+	fi
 	if [ -f "$DB_PATH" ]; then
 		log "database exists in the volume: no restore"
 	else
@@ -162,7 +184,15 @@ elif [ -n "${WIKICONTEXT_SUPERUSER_PASSWORD:-}" ]; then
 fi
 
 if [ "$replicate" = true ]; then
+    # Google-only deployments need a database before the IPC startup sync too.
+    if [ -n "${WIKICONTEXT_S3_BUCKET:-}" ] && [ ! -f "$DB_PATH" ]; then
+        # shellcheck disable=SC2046
+        "$SERVER" migrate up $(app_flags) || die "initial database migration failed"
+    fi
 	log "starting Litestream, which starts and supervises the server"
+	if [ -n "${WIKICONTEXT_S3_BUCKET:-}" ]; then
+		exec litestream replicate -config "$LITESTREAM_CONFIG_FILE" -exec "$SELF serve"
+	fi
 	exec python3 /usr/local/bin/wikicontext-backup.py supervise litestream replicate -config "$LITESTREAM_CONFIG_FILE" -exec "$SELF serve"
 fi
 serve

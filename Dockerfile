@@ -86,6 +86,7 @@ EXPOSE 80
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 
 ARG REVISION=unknown
+ENV WIKICONTEXT_REVISION=${REVISION}
 LABEL org.opencontainers.image.title="WikiContext" \
       org.opencontainers.image.description="Source-grounded wiki knowledge with protected originals and reproducible Obsidian exports" \
       org.opencontainers.image.source="https://github.com/pocketcontext/wikicontext" \

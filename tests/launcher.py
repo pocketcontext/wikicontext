@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-APP = ROOT.name
+APP = 'wikicontext'
 source = ROOT / 'skills' / APP / APP
 text = source.read_text()
 assert re.search(r'rev = "[0-9a-f]{40}"', text), 'Launcher must pin a full commit'

@@ -199,3 +199,134 @@ Authentication and portable OAuth client adapted from RaiseContext `44f8f1053738
 ## Request observability
 
 The pinned server enables an authenticated, bounded in-memory trace buffer for `wikicontext`. Collection is client opt-in; ordinary commands produce no traces. See [optional skill tracing](skills/wikicontext/references/tracing.md) for separate ObserveContext login, private upload, SQL-text consent, delivery retries and measurement limits. No ObserveContext credentials are installed on this server.
+
+## Object storage deployment
+
+The application supports private PocketBase S3 file storage.
+Set all of `WIKICONTEXT_S3_BUCKET`, `WIKICONTEXT_S3_ENDPOINT`,
+`WIKICONTEXT_S3_REGION`, `WIKICONTEXT_S3_ACCESS_KEY_ID` and
+`WIKICONTEXT_S3_SECRET_ACCESS_KEY`. Optional `WIKICONTEXT_S3_FORCE_PATH_STYLE`
+is `true` by default. Partial settings stop startup without logging values.
+Use a dedicated private bucket with no public downloads or lifecycle deletion.
+Uploads and protected downloads still use PocketBase's ordinary authenticated API;
+original checksums are streamed from its configured filesystem backend.
+During a frozen restart, these values must match the stored backend and
+credentials exactly; configuration changes are refused until an explicit thaw.
+
+With this contract enabled, startup preserves a healthy local database or restores
+an absent database from Litestream. Before HTTP starts, the supervised child calls
+Litestream's private mode-0600 IPC socket with `sync -wait`, forcing database
+initialization and a completed initial remote sync. Startup intentionally requires
+a reachable replica; missing IPC or failed synchronization refuses serving.
+Google-only fresh deployments bootstrap the database with migrations before this
+handshake. This closes Litestream 0.5.17's early-stop gap: before its first monitor
+tick, an uninitialized database otherwise skips final replication on shutdown. It never restores the legacy complete archive,
+and no archive scheduler runs. Before opening the server, it streams every original
+referenced by SQLite from S3 and verifies its recorded SHA-256. Missing, corrupt or
+inaccessible evidence refuses startup. This costs a full evidence read on restart;
+measure duration and allow sufficient ONCE startup time. Other PocketBase file
+fields use the same storage backend; the integrity gate specifically covers sources.
+
+Setting S3 does not migrate existing local files. Use the verified file-copy
+procedure in [the migration runbook](tools/MIGRATION.md) before enabling remote
+storage on an existing dataset. Local-storage deployments retain complete backup behavior. Do not
+remove S3 configuration from a remote deployment or run legacy archive commands
+against it. Litestream and file storage must use separate buckets and credentials.
+Keep object retention at least as long as database recovery history. SQLite and S3
+have no shared transaction: failed uploads can leave unreferenced objects, which
+must not be automatically deleted based on a potentially stale restored database.
+
+Exactly one application writer and replica publisher may operate per replica path.
+For handover, stop the source cleanly, prevent its restart, restore into a separate
+recovery location and compare the recovered committed database state with the
+stopped source before starting the destination. Litestream 0.5.17 can exit zero
+when its replica endpoint is unavailable; a clean process exit alone does not
+prove final remote synchronization. Preserve the source volume until the recovered
+state and all original-file hashes are verified. An unplanned host loss
+can lose SQLite commits not yet replicated, even when uploaded objects survived.
+No automatic cross-host fencing or zero-loss crash guarantee is provided.
+
+For a disposable MinIO bucket only, install the package and `boto3`, set the S3
+variables above, then run `python3 tests/object_storage_integration.py --binary
+/absolute/path/to/pinned/pocketcontext --synthetic-bucket EXACT_TEST_BUCKET` on
+one line. The test uploads synthetic evidence, proves protected downloads and
+remote hashing, restores a database with no local files, then deliberately corrupts
+and deletes its own object to prove verification fails closed.
+
+## Isolated experiment CD (separate branch)
+
+`.github/workflows/experiment.yml` runs on pushes to exactly
+`experiment/object-storage`, using GitHub environment `once-v2`. That worktree
+restricts its workflows to its own branch. Main retains the production image and
+deployment workflow, with both legacy and object-storage recovery release gates.
+The reusable test workflow keeps the same branch guard. Publication gates on the
+complete reusable backend/reader suite, native ARM64 image checks, legacy recovery,
+and `docker/object_storage_smoke.py` for real S3/Litestream fresh-volume recovery.
+It publishes to the separate `ghcr.io/pocketcontext/wikicontext-v2` package
+using unique `experiment-SHA-RUN-ATTEMPT` tags plus this separate package’s `latest`. The whole workflow is serialized, including tag
+publication and deployment. ONCE policy tracks the separate package’s latest tag and resolves its
+immutable digest before stopping; initial provisioning can pin a validated digest.
+
+Environment `once-v2` must contain `SSH_PRIVATE_KEY`, `SERVER_IP`, `SERVER_USER=deploy`
+and pinned `SSH_KNOWN_HOSTS`. The key must authorize only the experimental host's
+forced command. No remote command or registry credentials are sent. The new
+package must be made publicly pullable, or an operator must separately configure
+root Docker registry authentication. Verification requires `/up` and the image's
+non-secret `X-WikiContext-Revision` header to match the workflow commit.
+The experimental worktree removes inherited production publication/deployment
+jobs. Its deployment key must be retired before promoting that host to production;
+production receives a separate main-only deployment environment and key.
+
+For the standalone recovery test, set disposable MinIO S3 and Litestream settings
+and run `python3 tests/object_storage_recovery.py --binary PINNED_SERVER
+--litestream LITESTREAM_BINARY --synthetic-files-bucket TEST_FILES
+--synthetic-replica-bucket TEST_REPLICA` on one line. For the actual image gate,
+run `python3 docker/object_storage_smoke.py --image TEST_IMAGE --minio-image
+LOCAL_MINIO_FIXTURE` on one line. Both use synthetic records and isolated replicas.
+
+### Prepared live experiment verification
+
+`tools/verify_experiment.py` is restricted to `https://wiki-v2.pocketcontext.com`
+and the `wikicontext-v2-files` / `wikicontext-v2-replica` buckets. With experiment
+credentials in the process environment and `boto3` installed, an explicitly
+approved live check is:
+
+```sh
+python3 tools/verify_experiment.py --api-and-r2 --manifest /tmp/wiki-v2-synthetic-manifest.json
+```
+
+This creates a disposable default-users account with maintenance credentials,
+then uploads one synthetic original as that ordinary user. It verifies the server
+hash, protected download, anonymous denial and exact remote bytes. It disables the
+disposable account in a finalizer. Immutable synthetic source evidence is retained.
+Only check outcomes are printed; synthetic object metadata goes into a mode-0600
+manifest, never credentials. Replica-object presence is checked separately and is
+not proof that the latest write replicated.
+
+To verify no local original remains, use the same script and synthetic manifest
+inside the experimental container or against its mounted data directory:
+
+```sh
+python3 verify_experiment.py --check-local-storage /storage/pb_data --manifest /tmp/wiki-v2-synthetic-manifest.json
+```
+
+The script and manifest can be copied into the experimental container's `/tmp`
+for this check and removed afterward. Do not print container environment or ONCE
+labels when selecting the container. No live check is performed by preparing or
+running `--help` on this script.
+
+A migration gate must additionally stop the source and compare its database with
+a fresh replica restore before destination activation:
+
+```sh
+python3 tests/object_storage_recovery.py --verify-source /stopped/data.db --verify-restored /restored/data.db
+```
+
+The comparator checks full integrity and logical schema/table/row contents without
+printing source data. Keep the stopped source intact if comparison fails.
+
+The actual-image S3 drill uses a one-hour remote sync interval and performs API
+writes after the initial handshake. It strictly restores the replica into a
+separate volume, compares every logical database record with the stopped source,
+and only then destroys the source volume and starts the recovered writer. It also
+checks missing-IPC startup refusal and fresh Google-only database initialization.

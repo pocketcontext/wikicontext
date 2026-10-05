@@ -29,6 +29,8 @@ jobs:
         run: python3 wikicontext/tests/deploy_workflow.py
       - name: Test complete evidence backups
         run: python3 wikicontext/tests/backup.py
+      - name: Test immutable-file migration tooling
+        run: python3 wikicontext/tests/migrate_files.py
       - name: Test initial deployment orchestration
         run: python3 wikicontext/tests/bootstrap.py
       - name: Test frozen container startup

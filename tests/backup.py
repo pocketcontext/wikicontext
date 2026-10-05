@@ -89,12 +89,75 @@ class BackupTests(unittest.TestCase):
         self.conn.execute('INSERT INTO sources VALUES(?,?,?)', ('doc','synthetic.txt',backup.digest(self.original)))
         self.conn.commit()
 
+    def test_remote_original_verification_needs_no_local_storage(self):
+        client = FakeS3()
+        key = 'col/doc/synthetic.txt'
+        client.objects[key] = self.original.read_bytes()
+        self.original.unlink()
+        env = {'WIKICONTEXT_S3_' + name: 'synthetic' for name in
+               ('BUCKET', 'ENDPOINT', 'REGION', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')}
+        with patch.dict(os.environ, env):
+            backup.verify_remote(self.data, client)
+            client.objects[key] = b'Corrupted'
+            with self.assertRaises(RuntimeError):
+                backup.verify_remote(self.data, client)
+            del client.objects[key]
+            with self.assertRaises(FakeClientError):
+                backup.verify_remote(self.data, client)
+
+    def test_persisted_remote_mode_without_environment_refuses_even_empty_database(self):
+        self.conn.execute('DELETE FROM sources')
+        self.conn.execute('CREATE TABLE _params(id TEXT, value TEXT)')
+        self.conn.execute('INSERT INTO _params VALUES(?,?)', ('settings', json.dumps({'s3': {'enabled': True}})))
+        self.conn.commit()
+        with patch.dict(os.environ, {}, clear=True), self.assertRaises(RuntimeError):
+            backup.verify(self.data)
+
     def test_invalid_interval_never_starts_writer(self):
         for value in ('invalid', '0', '3601'):
             with patch.dict(os.environ, {'WIKICONTEXT_BACKUP_INTERVAL': value}), patch.object(backup.subprocess, 'Popen') as start:
                 with self.assertRaises((ValueError, RuntimeError)):
                     backup.supervise(['synthetic-writer'])
                 start.assert_not_called()
+
+    def frozen_storage(self):
+        fields = {'bucket': 'BUCKET', 'endpoint': 'ENDPOINT', 'region': 'REGION',
+                  'accessKey': 'ACCESS_KEY_ID', 'secret': 'SECRET_ACCESS_KEY'}
+        env = {'WIKICONTEXT_S3_' + name: 'synthetic-' + field for field, name in fields.items()}
+        settings = {field: env['WIKICONTEXT_S3_' + name] for field, name in fields.items()}
+        settings.update(enabled=True, forcePathStyle=True)
+        self.conn.execute('CREATE TABLE _params(id TEXT, value TEXT)')
+        self.conn.execute('INSERT INTO _params VALUES(?,?)', ('settings', json.dumps({'s3': settings})))
+        self.conn.commit()
+        (self.data / 'maintenance.json').write_text(json.dumps({'readOnly': True, 'generation': 1}))
+        return env
+
+    def test_frozen_remote_settings_match_before_verification(self):
+        env = self.frozen_storage()
+        with patch.dict(os.environ, env, clear=True), patch.object(backup, 'verify_remote') as verify:
+            backup.verify(self.data)
+            verify.assert_called_once_with(self.data)
+
+    def test_frozen_changed_remote_settings_never_verify_another_backend(self):
+        env = self.frozen_storage()
+        cases = [{}] + [dict(env, **{key: 'changed'}) for key in env]
+        cases += [dict(env, WIKICONTEXT_S3_FORCE_PATH_STYLE='false'),
+                  dict(env, WIKICONTEXT_S3_FORCE_PATH_STYLE='invalid')]
+        for values in cases:
+            with patch.dict(os.environ, values, clear=True), patch.object(backup, 'verify_remote') as verify:
+                with self.assertRaisesRegex(RuntimeError, 'frozen object storage configuration'):
+                    backup.verify(self.data)
+                verify.assert_not_called()
+
+    def test_frozen_local_storage_cannot_switch_to_remote(self):
+        (self.data / 'maintenance.json').write_text(json.dumps({'readOnly': True, 'generation': 1}))
+        with patch.dict(os.environ, {}, clear=True):
+            backup.verify(self.data)
+        with patch.dict(os.environ, {'WIKICONTEXT_S3_BUCKET': 'changed'}, clear=True), \
+                patch.object(backup, 'verify_remote') as verify:
+            with self.assertRaisesRegex(RuntimeError, 'frozen object storage configuration'):
+                backup.verify(self.data)
+            verify.assert_not_called()
 
     def archive(self, source, path):
         with tarfile.open(path,'w:gz') as tar:

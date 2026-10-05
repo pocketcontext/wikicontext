@@ -89,8 +89,15 @@ function audit(e,action){
  const actor=e.record.getString('_audit_actor');if(!actor)return e.next();e.record.set('_audit_actor','');
  e.next();
  if(e.record.collection().name==='sources'&&action==='create'){
-  const path=e.app.dataDir()+'/storage/'+e.record.collection().id+'/'+e.record.id+'/'+e.record.getString('original');
-  const hash=toString($os.cmd('sha256sum',path).output()).split(' ')[0];if(!/^[a-f0-9]{64}$/.test(hash))invalid('Cannot hash original');
+  // Stream through PocketBase's storage backend: never assume originals are local.
+  const fs=e.app.newFilesystem();let reader,hash;
+  try {
+   reader=fs.getReader(e.record.baseFilesPath()+'/'+e.record.getString('original'));
+   const command=$os.cmd('sha256sum');command.stdin=reader;
+   hash=toString(command.output()).split(' ')[0];
+  } catch (_) { invalid('Cannot hash original'); }
+  finally { if(reader)reader.close();fs.close(); }
+  if(!/^[a-f0-9]{64}$/.test(hash))invalid('Cannot hash original');
   e.record.set('sha256',hash);e.app.saveNoValidate(e.record);
  }
  const changes={revision:e.record.getInt('revision'),status:e.record.getString('status')};

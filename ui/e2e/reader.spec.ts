@@ -162,6 +162,9 @@ test("published reader: navigation, evidence, safe Markdown, live updates, histo
     .locator(".page-list")
     .getByRole("link", { name: "Observatory", exact: true })
     .click();
+  // Wait for hash navigation to finish before asserting keyboard focus.
+  await expect(page.getByRole("heading", { name: "Observatory", exact: true })).toBeVisible();
+  await expect(search).toBeVisible();
   await search.focus();
   await page.keyboard.press("Tab");
   expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe(
@@ -685,6 +688,9 @@ test("protected image previews support evidence links, enlargement, retry and se
   const imageFiles = `**/api/files/sources/${records.image}/**`;
   await page.route(imageFiles, route => route.fulfill({ status: 403, body: "Synthetic expired file token" }));
   await page.goto(sourcePath);
+  // Hash navigation can leave the previous broken source visible briefly.
+  // Wait for this source before accepting its error and removing the mock.
+  await expect(recordHeading).toBeVisible();
   await expect(page.getByText("Unable to load image preview.", { exact: true })).toBeVisible();
   const beforeRetry = tokenRequests;
   await page.unroute(imageFiles);
