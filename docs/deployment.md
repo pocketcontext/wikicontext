@@ -134,9 +134,10 @@ initial deployment.
 
 ## Runtime migration freeze
 
-The application pins PocketContext `94d4549b4cffe7f2754e65467efdd9be16450a25`,
-which provides the runtime maintenance API. Deploy an image with this pin before
-attempting a production freeze. Older images do not expose the API.
+The application pins PocketContext `976ddf71a4734530adefe4a56633658a0894b449`,
+which retains the runtime maintenance API and fixes writable PocketBase backup
+creation under the SQLite guard. Verify API support before attempting a production
+freeze; images predating the maintenance feature do not expose it.
 
 An operator with an existing valid superuser token reads
 `GET /api/context/maintenance`, then sends `PUT /api/context/maintenance` with
