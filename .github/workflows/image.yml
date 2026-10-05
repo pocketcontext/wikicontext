@@ -222,13 +222,13 @@ jobs:
             --notes-file "$RUNNER_TEMP/release-notes.md"
 
   deploy:
-    if: vars.COLORS_PROFILE != ''
+    if: github.ref == 'refs/heads/main' && vars.COLORS_PROFILE != ''
     needs:
       - image-release
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
-      packages: read
+      contents: read
     environment:
       name: ${{ vars.COLORS_PROFILE }}
     # Serialize rather than cancel: interrupting a deploy midway is worse than making the next one wait.
@@ -238,13 +238,11 @@ jobs:
     steps:
       - name: Deploy via SSH
         env:
-          # SSH key and ephemeral registry token are secrets; host identity remains pinned.
+          # The public package needs only the restricted deployment key.
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SERVER_IP: ${{ vars.SERVER_IP }}
           SERVER_USER: ${{ vars.SERVER_USER }}
           SSH_KNOWN_HOSTS: ${{ vars.SSH_KNOWN_HOSTS }}
-          REGISTRY_USER: ${{ github.actor }}
-          REGISTRY_TOKEN: ${{ github.token }}
         run: |
           mkdir -p ~/.ssh
           # shellcheck disable=SC2046
@@ -258,10 +256,10 @@ jobs:
           fi
           printf '%s\n' "$SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
 
-          # No remote command. The fixed wrapper accepts only bounded registry credentials
-          # on stdin and destroys its isolated Docker configuration after the update.
-          python3 -c 'import json, os; print(json.dumps({"username": os.environ["REGISTRY_USER"], "token": os.environ["REGISTRY_TOKEN"]}))' | \
-            ssh -T -o StrictHostKeyChecking=yes "$SERVER_USER@$SERVER_IP"
+          # No remote command or registry credentials. The forced command selects
+          # the permitted host and applies its stop-first deployment policy.
+          test "$SERVER_USER" = deploy
+          ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes "$SERVER_USER@$SERVER_IP" </dev/null
       - name: Verify public health
         run: |
           # /up executes a database query, so HTTP 200 also checks database availability.

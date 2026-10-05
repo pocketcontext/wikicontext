@@ -81,6 +81,19 @@ a sandbox for a hostile filesystem.
 8. Retain recovery copies. After destination writes, the original snapshot is no
    longer a lossless rollback target.
 
+When comparing the original database with the S3-configured preparation,
+account for the explicitly reviewed S3 settings, their update timestamp, and
+an advancing single-row `_litestream_seq.seq` replication counter. Reject other
+changes. The stopped preparation and its strict replica restore must still match
+exactly, including that counter.
+
+For hash-verified, stopped SQLite snapshots, use immutable read connections and
+close them explicitly. Ordinary read-only connections can leave empty WAL and
+SHM files. Validate that any WAL or rollback journal is empty before omitting
+these sidecars from activation; never discard a journal containing data. ONCE
+mounts the same application volume at both `/storage` and `/rails/storage`;
+verify both aliases when preserving the volume during a hostname change.
+
 The existing v2 migration drill proves synthetic recovery only. Production file
 counts and bytes require running inventory on a private production snapshot.
 Conditional object creation must also be rehearsed against the intended provider
