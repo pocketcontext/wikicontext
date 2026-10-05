@@ -53,7 +53,7 @@ def main():
             status, retrieval_headers, trace = call('GET', path, extra=extra)
             assert status == 200 and retrieval_headers['Cache-Control'] == 'no-store'
             assert 'X-Context-Request-Id' not in retrieval_headers
-            assert trace['service'] == ROOT.name and trace['user_id'] == user['id']
+            assert trace['service'] == 'wikicontext' and trace['user_id'] == user['id']
             assert trace['correlation_id'] == 'synthetic-operation' and len(trace['spans']) >= 4
             assert trace.get('sql', '') == (sql if capture else '')
             assert call('GET', path, auth=users[1][1])[0] == 404

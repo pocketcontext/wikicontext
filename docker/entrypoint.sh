@@ -59,6 +59,17 @@ elif [ -n "${WIKICONTEXT_GOOGLE_CLIENT_SECRET:-}" ] && [ -z "${WIKICONTEXT_GOOGL
 	die "WIKICONTEXT_GOOGLE_CLIENT_SECRET requires WIKICONTEXT_GOOGLE_CLIENT_ID"
 fi
 
+# Check the complete S3 contract before touching replication state.
+s3_any="${WIKICONTEXT_S3_BUCKET:-}${WIKICONTEXT_S3_ENDPOINT:-}${WIKICONTEXT_S3_REGION:-}${WIKICONTEXT_S3_ACCESS_KEY_ID:-}${WIKICONTEXT_S3_SECRET_ACCESS_KEY:-}"
+if [ -n "$s3_any" ]; then
+    for name in WIKICONTEXT_S3_BUCKET WIKICONTEXT_S3_ENDPOINT WIKICONTEXT_S3_REGION WIKICONTEXT_S3_ACCESS_KEY_ID WIKICONTEXT_S3_SECRET_ACCESS_KEY; do
+        eval "value=\${$name:-}"
+        [ -n "$value" ] || die "incomplete object storage configuration"
+    done
+    case "${WIKICONTEXT_S3_FORCE_PATH_STYLE:-true}" in true|false) ;; *) die "invalid object storage path style" ;; esac
+fi
+s3_any= value=
+
 if [ "${1:-}" = serve ]; then
 	serve
 fi
@@ -87,7 +98,9 @@ else
 fi
 
 if [ "$replicate" = true ]; then
-	python3 /usr/local/bin/wikicontext-backup.py restore || die "complete evidence restore failed"
+	if [ -z "${WIKICONTEXT_S3_BUCKET:-}" ]; then
+		python3 /usr/local/bin/wikicontext-backup.py restore || die "complete evidence restore failed"
+	fi
 	if [ -f "$DB_PATH" ]; then
 		log "database exists in the volume: no restore"
 	else
@@ -123,6 +136,9 @@ fi
 
 if [ "$replicate" = true ]; then
 	log "starting Litestream, which starts and supervises the server"
+	if [ -n "${WIKICONTEXT_S3_BUCKET:-}" ]; then
+		exec litestream replicate -config "$LITESTREAM_CONFIG_FILE" -exec "$SELF serve"
+	fi
 	exec python3 /usr/local/bin/wikicontext-backup.py supervise litestream replicate -config "$LITESTREAM_CONFIG_FILE" -exec "$SELF serve"
 fi
 serve

@@ -57,11 +57,57 @@ def refs(data):
         return result
 
 
+def stored_remote_storage(data):
+    db = data / 'data.db'
+    if not db.exists():
+        return False
+    with closing(sqlite3.connect(f'file:{db}?mode=ro', uri=True)) as conn:
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='_params'").fetchone():
+            return False
+        row = conn.execute("SELECT value FROM _params WHERE id='settings'").fetchone()
+    if not row:
+        return False
+    try:
+        return bool(json.loads(row[0]).get('s3', {}).get('enabled'))
+    except (ValueError, AttributeError):
+        raise RuntimeError('cannot determine persisted storage mode') from None
+
+
 def verify(data):
+    if not os.environ.get('WIKICONTEXT_S3_BUCKET') and stored_remote_storage(data):
+        raise RuntimeError('remote storage requires explicit environment configuration')
+    if os.environ.get('WIKICONTEXT_S3_BUCKET'):
+        return verify_remote(data)
     for name, expected in refs(data).items():
         path = data / name
         if path.is_symlink() or not path.is_file() or digest(path) != expected:
             raise RuntimeError('missing or corrupt original evidence; startup refused')
+
+
+def verify_remote(data, client=None):
+    """Verify the restored database against immutable objects, without local copies."""
+    names = ('BUCKET', 'ENDPOINT', 'REGION', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+    config = {name: os.environ.get('WIKICONTEXT_S3_' + name, '') for name in names}
+    if not all(config.values()):
+        raise RuntimeError('incomplete object storage configuration')
+    if client is None:
+        import boto3
+        from botocore.config import Config
+        endpoint = config['ENDPOINT']
+        if '://' not in endpoint:
+            endpoint = 'https://' + endpoint
+        client = boto3.client('s3', endpoint_url=endpoint, region_name=config['REGION'],
+            aws_access_key_id=config['ACCESS_KEY_ID'], aws_secret_access_key=config['SECRET_ACCESS_KEY'],
+            config=Config(connect_timeout=10, read_timeout=60, retries={'max_attempts': 3},
+                s3={'addressing_style': 'path' if os.environ.get('WIKICONTEXT_S3_FORCE_PATH_STYLE', 'true') == 'true' else 'virtual'}))
+    for name, expected in refs(data).items():
+        response = client.get_object(Bucket=config['BUCKET'], Key=name.removeprefix('storage/'))
+        with closing(response['Body']) as body:
+            checksum = hashlib.sha256()
+            for chunk in iter(lambda: body.read(1024 * 1024), b''):
+                checksum.update(chunk)
+        if checksum.hexdigest() != expected:
+            raise RuntimeError('missing or corrupt remote original; startup refused')
 
 
 def snapshot(data, dest):

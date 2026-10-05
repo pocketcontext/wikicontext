@@ -22,12 +22,35 @@ function up(e) {
   } catch (error) {
     throw new ApiError(503, "The database is not available.", {});
   }
+  const revision = env("WIKICONTEXT_REVISION");
+  if (/^[a-f0-9]{40}$/.test(revision)) e.response.header().set("X-WikiContext-Revision", revision);
   return e.string(200, "OK");
 }
 
 // Copies the environment contract into the settings. Every group is saved on its own, and only when a value
 // differs from the stored one. A group with no variables set changes nothing. Log lines carry no secret values.
 function settings(app) {
+  // Fail closed: partial remote storage settings must never silently use local disk.
+  const s3Names = ['BUCKET', 'ENDPOINT', 'REGION', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY'];
+  const remote = s3Names.some(name => env('WIKICONTEXT_S3_' + name));
+  if (!remote && app.settings().s3.enabled)
+    throw new Error('Remote storage requires explicit WikiContext S3 configuration');
+  if (remote) {
+    if (s3Names.some(name => !env('WIKICONTEXT_S3_' + name)))
+      throw new Error('Incomplete WikiContext object storage configuration');
+    const style = env('WIKICONTEXT_S3_FORCE_PATH_STYLE') || 'true';
+    if (!['true', 'false'].includes(style)) throw new Error('Invalid object storage path style');
+    try {
+      const current = app.settings();
+      const desired = {enabled: true, bucket: env('WIKICONTEXT_S3_BUCKET'),
+        endpoint: env('WIKICONTEXT_S3_ENDPOINT'), region: env('WIKICONTEXT_S3_REGION'),
+        accessKey: env('WIKICONTEXT_S3_ACCESS_KEY_ID'), secret: env('WIKICONTEXT_S3_SECRET_ACCESS_KEY'),
+        forcePathStyle: style === 'true'};
+      if (Object.keys(desired).some(key => current.s3[key] !== desired[key])) {
+        Object.assign(current.s3, desired);app.save(current);
+      }
+    } catch (_) { throw new Error('Could not apply WikiContext object storage configuration'); }
+  }
   const group = (name, detail, change) => {
     const current = app.settings(), changed = [];
     const set = (section, key, value) => {

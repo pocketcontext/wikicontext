@@ -89,6 +89,30 @@ class BackupTests(unittest.TestCase):
         self.conn.execute('INSERT INTO sources VALUES(?,?,?)', ('doc','synthetic.txt',backup.digest(self.original)))
         self.conn.commit()
 
+    def test_remote_original_verification_needs_no_local_storage(self):
+        client = FakeS3()
+        key = 'col/doc/synthetic.txt'
+        client.objects[key] = self.original.read_bytes()
+        self.original.unlink()
+        env = {'WIKICONTEXT_S3_' + name: 'synthetic' for name in
+               ('BUCKET', 'ENDPOINT', 'REGION', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')}
+        with patch.dict(os.environ, env):
+            backup.verify_remote(self.data, client)
+            client.objects[key] = b'Corrupted'
+            with self.assertRaises(RuntimeError):
+                backup.verify_remote(self.data, client)
+            del client.objects[key]
+            with self.assertRaises(FakeClientError):
+                backup.verify_remote(self.data, client)
+
+    def test_persisted_remote_mode_without_environment_refuses_even_empty_database(self):
+        self.conn.execute('DELETE FROM sources')
+        self.conn.execute('CREATE TABLE _params(id TEXT, value TEXT)')
+        self.conn.execute('INSERT INTO _params VALUES(?,?)', ('settings', json.dumps({'s3': {'enabled': True}})))
+        self.conn.commit()
+        with patch.dict(os.environ, {}, clear=True), self.assertRaises(RuntimeError):
+            backup.verify(self.data)
+
     def test_invalid_interval_never_starts_writer(self):
         for value in ('invalid', '0', '3601'):
             with patch.dict(os.environ, {'WIKICONTEXT_BACKUP_INTERVAL': value}), patch.object(backup.subprocess, 'Popen') as start:

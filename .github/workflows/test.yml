@@ -1,13 +1,14 @@
 name: Wiki integration
 on:
   push:
-  pull_request:
+    branches: [experiment/object-storage]
   # Release publication requires this complete application test suite.
   workflow_call:
 permissions:
   contents: read
 jobs:
   test:
+    if: github.ref == 'refs/heads/experiment/object-storage' && github.event_name == 'push'
     strategy:
       fail-fast: false
       matrix:

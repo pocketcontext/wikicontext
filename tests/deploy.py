@@ -21,11 +21,12 @@ def main():
     spec = importlib.util.spec_from_file_location('smoke', ROOT / 'docker/smoke.py')
     smoke = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(smoke)
-    env = smoke.once_env({'WIKICONTEXT_RATE_LIMITS': 'true',
+    env = smoke.once_env({'WIKICONTEXT_RATE_LIMITS': 'true', 'WIKICONTEXT_REVISION': 'a' * 40,
                           'WIKICONTEXT_TRUSTED_PROXY_HEADER': 'X-Forwarded-For'})
     with patch.dict(os.environ, env), server(binary) as request:
         with urllib.request.urlopen(request.base_url + '/up') as response:
             assert response.status == 200 and response.read() == b'OK'
+            assert response.headers['X-WikiContext-Revision'] == 'a' * 40
         token = request('POST', '/api/collections/_superusers/auth-with-password', {
             'identity': 'admin@example.com', 'password': 'SyntheticAdminPassword123!',
         })['token']
@@ -52,8 +53,10 @@ def main():
         client.run('check')
         organization, unused = smoke.write_record(client, user)
         smoke.check_records(client, organization, unused)
-    # Invalid provider credentials fail closed on an empty database before serving.
+    # Invalid provider/storage credentials fail closed on an empty database before serving.
     for values in [
+        {'WIKICONTEXT_S3_BUCKET': 'synthetic-bucket'},
+        {'WIKICONTEXT_S3_SECRET_ACCESS_KEY': 'synthetic-storage-secret'},
         {'WIKICONTEXT_GOOGLE_CLIENT_ID': 'synthetic-client'},
         {'WIKICONTEXT_GOOGLE_CLIENT_SECRET': 'synthetic-secret'},
         {'WIKICONTEXT_GOOGLE_CLIENT_ID': 'has whitespace', 'WIKICONTEXT_GOOGLE_CLIENT_SECRET': 'synthetic-secret'},
