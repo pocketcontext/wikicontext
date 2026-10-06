@@ -8,6 +8,7 @@
 !docker/entrypoint.py
 !docker/litestream.yml
 !ui/
+ui/**
 !ui/package.json
 !ui/pnpm-lock.yaml
 !ui/index.html
