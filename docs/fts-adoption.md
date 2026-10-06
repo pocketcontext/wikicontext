@@ -89,7 +89,7 @@ a dropped or noncanonical FTS schema; restore trusted schema or a verified backu
 before rebuilding such an index. Do not expose maintenance credentials to knowledge clients or
 use this endpoint as part of ordinary search. Search never repairs indexes.
 
-Complete database/original-file backups include the index and generation. After
+Litestream database replicas include the index and generation. After
 restore, validate historical/live membership and protected originals. Rebuild can
 repair derived contents from valid canonical data; it cannot repair invalid
 publication manifests. Preserve the single-writer deployment procedure.

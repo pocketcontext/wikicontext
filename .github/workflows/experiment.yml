@@ -60,11 +60,10 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/client-venv"
           "$RUNNER_TEMP/client-venv/bin/pip" install .
           echo "$RUNNER_TEMP/client-venv/bin" >> "$GITHUB_PATH"
-      - name: Check configuration, permissions and legacy recovery
+      - name: Check configuration and permissions
         run: |
           python3 docker/smoke.py config --image wikicontext-v2:experiment-ci
           python3 docker/smoke.py smoke --image wikicontext-v2:experiment-ci
-          python3 docker/smoke.py restore --image wikicontext-v2:experiment-ci
       - name: Build disposable object storage fixture
         run: docker build --file docker/minio.Dockerfile --tag wikicontext-minio:experiment-ci docker
       - name: Require S3 and Litestream fresh-volume recovery

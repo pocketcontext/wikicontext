@@ -3,9 +3,9 @@
 WikiContext is deployed at `wiki.pocketcontext.com`, using the public image
 `ghcr.io/pocketcontext/wikicontext`. See [the release record](../DEPLOYMENT.md) for
 source/digests, completed checks and remaining browser verification.
-Fixed-target bootstrap, installer and update wrappers are enabled for that hostname.
+The maintained `once-pocketcontext-v2` scaffold controls that hostname.
 CI builds and exercises containers natively on AMD64 and ARM64. Publication on main
-requires both architecture checks (configuration, smoke and complete restore) and
+requires both architecture checks (configuration, smoke and S3/Litestream recovery) and
 the full application test suite on both architectures. Release archive access follows
 repository visibility; registry package visibility is configured independently.
 CD runs only when `COLORS_PROFILE` names the configured GitHub deployment environment.
@@ -22,18 +22,18 @@ and verify them before any release. Run:
 ```sh
 python3 docker/smoke.py config --image wikicontext:ci
 python3 docker/smoke.py smoke --image wikicontext:ci
-python3 docker/smoke.py restore --image wikicontext:ci
+python3 docker/object_storage_smoke.py --image wikicontext:ci --minio-image wikicontext-minio-fixture:9e49d5e-7394ce0
 ```
 
-The restore check uses synthetic original attachments and an isolated MinIO fixture.
-It kills the first writer, destroys its volume, restores the database and original
-bytes, then checks that a graceful stop saves a late upload. Never run a restore
+The recovery check uses synthetic original attachments and an isolated MinIO fixture.
+It restores an empty volume through normal startup and checks remote original bytes,
+replica consistency, fail-closed recovery and graceful shutdown. Never run a restore
 writer against the production replica beside the live instance.
 
 ## Configuration
 
 Set `BASE_URL` to the approved HTTPS origin. Set paired
-`WIKICONTEXT_SUPERUSER_EMAIL`/`WIKICONTEXT_SUPERUSER_PASSWORD` for maintenance bootstrap;
+`WIKICONTEXT_SUPERUSER_EMAIL`/`WIKICONTEXT_SUPERUSER_PASSWORD` for maintenance provisioning;
 ordinary operations use default `users`. Enable a separate Internal Google Web client
 with `WIKICONTEXT_GOOGLE_CLIENT_ID`, `WIKICONTEXT_GOOGLE_CLIENT_SECRET` and
 `WIKICONTEXT_GOOGLE_WORKSPACE_DOMAIN`. Configure both the CLI loopback redirect
@@ -41,96 +41,108 @@ with `WIKICONTEXT_GOOGLE_CLIENT_ID`, `WIKICONTEXT_GOOGLE_CLIENT_SECRET` and
 Every admitted, enabled user can read and edit shared wiki content. Google JIT must
 verify trusted claims; public password signup stays blocked.
 
-Use a dedicated private R2 bucket `wikicontext-backup` and prefix
-`once-pocketcontext/wikicontext`. Required settings are `LITESTREAM_BUCKET`,
-`LITESTREAM_PATH`, `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY`, with
-`LITESTREAM_REGION` and `LITESTREAM_ENDPOINT` for R2. Never reuse sibling replicas.
-Store deployment credentials under `COLORS_PAR_APP_WIKICONTEXT_*` in the private
-scaffold `.envrc.private`, preserving existing entries. Groq transcription credentials belong to
-the ingestion agent environment, not container deployment labels.
+The documented production architecture uses private R2 bucket `wikicontext-replica`
+and prefix `once-v2/wikicontext-production` for Litestream, and separate private
+bucket `wikicontext-files` for source originals. Set `LITESTREAM_BUCKET`,
+`LITESTREAM_PATH`, `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY`,
+`LITESTREAM_REGION` and `LITESTREAM_ENDPOINT`. Set all of
+`WIKICONTEXT_S3_BUCKET`, `WIKICONTEXT_S3_ENDPOINT`, `WIKICONTEXT_S3_REGION`,
+`WIKICONTEXT_S3_ACCESS_KEY_ID` and `WIKICONTEXT_S3_SECRET_ACCESS_KEY`;
+`WIKICONTEXT_S3_FORCE_PATH_STYLE` defaults to `true`.
+Use separate credentials for originals and replicas. Never reuse sibling replicas.
+Keep credentials only in the maintained `once-pocketcontext-v2` scaffold's private
+configuration. Groq transcription credentials belong to the ingestion agent.
 
-The image enables `WIKICONTEXT_RATE_LIMITS=true`. An explicitly isolated development
-instance can set `LITESTREAM_DISABLED=true`. Production must use replication.
+The container requires both services and enables `WIKICONTEXT_RATE_LIMITS=true`.
+There is no replication-disabled or local-originals mode. Run the pinned server
+directly for isolated local application development.
 
-## Complete recovery
+## Startup and complete recovery
 
-Litestream protects the database; complete backups additionally contain every
-immutable source original referenced by an online SQLite snapshot. `backup.py`
-checks recorded source SHA-256 values, packages database and originals together,
-and publishes the latest pointer only after successful upload. Archives live under
-`<LITESTREAM_PATH>/full-backups`. Backups include identities and private settings;
-protect them as credentials. Every archive is independent: removing an older
-archive does not remove evidence from a retained archive.
+One Python entrypoint owns configuration validation, maintenance checks, database
+recovery, source verification and process handoff. Normal `start` preserves an
+existing database; when it is absent, a successful Litestream restore is required.
+A missing replica fails startup instead of creating an empty application. Restore
+uses a temporary location and validates SQLite before installing `data.db`.
+Startup streams each referenced original from S3 and checks its SHA-256 before
+HTTP starts. Missing, corrupt or unavailable evidence blocks startup.
 
-The container enables `WIKICONTEXT_BACKUP_PRUNE=true`. After a successful archive
-upload and latest-pointer publication, retention keeps all snapshots from the
-last 48 hours, the newest per UTC day through 30 days, and the newest per UTC
-month through 365 days. It always preserves the latest pointer's target and the
-three newest archives, regardless of age. Set the flag to `false` to suspend
-automatic pruning; running the script outside the image defaults to disabled.
-Retention bounds duplicate copies, not the size of the growing evidence corpus.
+Python then replaces itself with Litestream. Its internal `serve` child requires
+successful initial `sync -wait` over the private IPC socket before replacing itself
+with PocketContext. Litestream supervises the server and attempts final replication
+after graceful shutdown. Keep exactly one application writer and replica publisher
+per replica path. A clean exit alone does not establish complete replication.
 
-Pruning only recognizes timestamp/UUID archive names under the dedicated
-`full-backups/` prefix. It leaves unknown objects, `latest.json`, and Litestream
-replica objects untouched. Missing, invalid or dangling pointers abort cleanup.
-Upload and pruning share the local volume lock; this assumes the required single
-writer and does not coordinate independent hosts. Cleanup failures are reported
-separately and do not stop the application or invalidate a successful backup.
-
-Before initial cleanup, inspect the plan and restore a retained archive into
-isolated storage. With the existing R2 environment available:
+For first installation only, run one-shot `init` with the same private environment
+and empty volume that normal startup will use. It refuses an existing database or
+replica, creates and verifies the initial database, then exits. For example, after
+creating a dedicated local volume and private mode-0600 environment file:
 
 ```sh
-python3 /usr/local/bin/wikicontext-backup.py prune --dry-run
-# Explicit cleanup using the same policy:
-python3 /usr/local/bin/wikicontext-backup.py prune
-# Choose an exact archive key from the inventory; use an empty destination:
-WIKICONTEXT_DATA_DIR=/private/isolated-recovery \
-  python3 /usr/local/bin/wikicontext-backup.py restore --archive "$ARCHIVE_KEY"
+docker run --rm --env-file /private/wikicontext.env \
+  --mount source=wikicontext-data,target=/storage wikicontext:tested init
+docker run --name wikicontext --env-file /private/wikicontext.env \
+  --mount source=wikicontext-data,target=/storage -p 127.0.0.1:8090:80 wikicontext:tested
 ```
 
-Dry-run output includes retained/deletable counts and bytes plus deletion
-candidates. Keep this operational inventory private. Do not apply age-based R2
-expiration to the complete-backup prefix: it cannot preserve the last good
-archive through an extended backup outage. Historical archives carry internal
-database/original checksums; only the latest pointer additionally records the
-outer archive checksum. Do not run a recovered server against the live replica.
+Do not run `init` during recovery. The ordinary `start` that follows establishes
+replication before serving. An interrupted or failed initialization leaves a private
+`initialization.pending` marker, and normal startup refuses that directory. Preserve
+the failed volume for inspection and initialize a fresh volume; do not remove the
+marker to bypass validation. The marker is removed only after successful database
+creation, evidence verification and requested provisioning.
 
-A complete backup runs shortly after startup, every
-`WIKICONTEXT_BACKUP_INTERVAL` seconds (default 3600, allowed 1–3600), and after a
-successful graceful shutdown. The complete-backup interval bounds original-file
-recovery; frequent database replication does not reduce that interval. Monitor
-backup failures and last successful archive time before treating the service as
-production-ready.
-
-On an empty volume the entrypoint restores the latest verified complete archive
-before considering database-only recovery, then verifies all original references
-before starting. Existing volumes are never replaced automatically. Database-only
-recovery fails startup if referenced originals are missing. Recover into a fresh
-isolated directory/volume; verify hashes, ordinary-user queries and protected file
-access before switching service. Backup retention never deletes live immutable
-originals or records. A generated Obsidian vault is not a backup.
-
-For a local, synthetic drill without Docker:
+`verify` checks the existing database and remote
+originals without starting a writer:
 
 ```sh
-python3 tests/backup.py
-python3 tests/backup_integration.py --binary /absolute/path/to/pinned/pocketcontext
+docker run --rm --env-file /private/wikicontext.env \
+  --mount source=wikicontext-recovery,target=/storage wikicontext:tested verify
+```
+
+For host replacement, stop and fence the source and its deployment automation.
+Restore into isolated storage, compare the recovered committed database with the
+stopped source before activating the destination, and verify original bytes and
+protected authenticated downloads. Keep the source volume until verification
+passes. An abrupt host loss can lose unreplicated SQLite commits. Original object
+retention must cover the entire database recovery history; do not delete objects
+because a restored database does not reference them. A generated Obsidian vault
+is not an application backup. SQLite, `maintenance.json`, and `auxiliary.db` have
+different recovery needs; see the freeze procedure below.
+
+Local tests use the pinned disposable MinIO fixture, separate synthetic original
+and replica buckets, and isolated volumes. Run:
+
+```sh
+python3 tests/entrypoint.py
 python3 tests/bootstrap.py
 python3 tests/deploy_workflow.py
+python3 docker/object_storage_smoke.py --image wikicontext:ci --minio-image wikicontext-minio-fixture:9e49d5e-7394ce0
 ```
+
+### Historical local-original archives
+
+The new container neither produces, prunes nor restores complete local-file
+archives. Preserve retained archives and their historical volumes. For those
+archives only, retain the old multiarchitecture image
+`ghcr.io/pocketcontext/wikicontext@sha256:390cae0cadc9828bbecd63e00e88fa4019c3c0157dff37e589d85227af9d1028`
+(source `1a625b7f84370abc2c4719346c27e287a7282165`, 4 October 2026).
+Its `/usr/local/bin/wikicontext-backup.py restore --archive KEY` command remains
+available when invoked explicitly through a Python entrypoint override. Use that
+image's documented legacy replica credentials and an empty isolated destination;
+never attach a recovered writer to the live replica. Check schema compatibility,
+verify its database and originals, and migrate files before adopting the new
+container. Removing runtime support does not authorize archive or volume deletion.
 
 ## Updates
 
-Disable ONCE automatic updates. Install the
-root-owned fixed-target wrapper with `deploy/install.py`, preserving sibling SSH
-keys. The wrapper locks, verifies the exact existing application/image, pulls,
-gracefully stops the sole writer, and updates that target. It refuses forced-stop
-or ambiguous-container results and avoids starting a second writer during recovery.
-Reinstall it after scaffold convergence rewrites authorized keys. Do not use an
-ordinary overlapping ONCE update. The bootstrap takes only a root-owned, mode-0600
-private payload and bounded registry credentials; remove its temporary key after
-initial deployment.
+Disable ONCE automatic updates. The maintained `once-pocketcontext-v2` scaffold
+owns production provisioning and deployment configuration. Its fixed-target update
+wrapper must lock, verify the exact application/image, pull, gracefully stop the
+sole writer, and update only that target. Never use an overlapping ONCE update.
+The older `deploy/bootstrap-wikicontext.py` is retired and always refuses execution;
+it hardcoded the obsolete local-file replica target. `init` initializes application
+storage only and does not provision cloud resources or change deployment policy.
 
 ## Runtime migration freeze
 
@@ -155,15 +167,15 @@ freeze. This is a migration maintenance window, not permanent public read-only
 hosting.
 
 The server owns `pb_data/maintenance.json`; retain it with the active volume. On a
-frozen restart, the container requires the existing database and skips archive
-restore, replica restore and superuser upsert. The bootstrap hook preserves stored
+frozen restart, the container requires the existing database and skips
+replica restore and superuser upsert. The bootstrap hook preserves stored
 settings and OAuth configuration instead of applying changed environment values.
 Invalid maintenance state stops startup. Do not remove or edit the marker to
 unfreeze the process: send the same PUT with `readOnly:false` and the latest
 generation after confirming this host remains the authorized writer.
 
-This flag freezes application database and HTTP mutations, not independent backup
-or Litestream processes. Those publishers keep running until explicitly fenced.
+This flag freezes application database and HTTP mutations, not the independent
+Litestream process. The publisher keeps running until explicitly fenced.
 Before promoting a recovered host, stop the old replica publisher and deployment
 automation, and independently verify the final database and originals. Never
 restart a stale source after destination writes have begun. The marker is separate
@@ -181,7 +193,7 @@ databases and is a different operation from cold replica recovery.
 Validate with synthetic isolated data:
 
 ```sh
-python3 tests/maintenance_entrypoint.py
+python3 tests/entrypoint.py
 python3 tests/maintenance.py --binary /absolute/path/to/maintenance-capable/pocketcontext
 ```
 

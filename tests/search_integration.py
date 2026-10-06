@@ -2,7 +2,6 @@
 """Synthetic HTTP tests for publication-scoped FTS maintenance and recovery."""
 import argparse
 import contextlib
-import importlib.util
 import json
 from pathlib import Path
 import shutil
@@ -13,6 +12,7 @@ import time
 import urllib.error
 import urllib.request
 
+from snapshot import snapshot
 from integration import ROOT, credentials
 
 
@@ -159,8 +159,7 @@ def main():
             request('POST','/api/context/search',dict(index='pages',scope=pub1['id'],query='orchid',limit=1,offset=1,expectedGeneration=old['generation']),token,409)
             expected=f.search(pub4)
             # Snapshot includes the index and generation; restore on a separate server.
-            spec=importlib.util.spec_from_file_location('backup',ROOT/'docker/backup.py');backup=importlib.util.module_from_spec(spec);spec.loader.exec_module(backup)
-            backup.snapshot(request.data_dir,Path(tmp)/'restored_data')
+            snapshot(request.data_dir,Path(tmp)/'restored_data')
         with running(args.binary,Path(tmp)/'restore_app',data=Path(tmp)/'restored_data') as request:
             f=Fixture(request,token);restored=f.search(pub4)
             assert restored==expected,(restored,expected)

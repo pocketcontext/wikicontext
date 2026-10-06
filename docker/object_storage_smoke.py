@@ -28,7 +28,8 @@ try:
  s.check(status != 0 and 'initial replica synchronization failed' in output and 'starting server on port 80' not in output,
      'missing replication IPC refuses HTTP startup')
  with tempfile.TemporaryDirectory(prefix='wiki-image-s3-') as td:
-  tmp=pathlib.Path(td);first=network+'-a';second=network+'-b'
+  tmp=pathlib.Path(td);first=network+'-a';second=network+'-b';recovered=network+'-c'
+  s.initialize(args.image,first,env,network)
   s.run_app(args.image,first,first,env,network);base=s.wait_up(first)
   admin=s.superuser_token(base,env['WIKICONTEXT_SUPERUSER_EMAIL'],env['WIKICONTEXT_SUPERUSER_PASSWORD'])
   password=s.secret(secrets.token_urlsafe(24));user=s.provision_user(base,admin,'restore@example.test',password)
@@ -54,16 +55,69 @@ try:
       'exec python3 /tests/object_storage_recovery.py --verify-source /tmp/source/data.db --verify-restored /tmp/restored/data.db')
   s.check(True,'entire recovered database equals stopped source before volume destruction')
   s.docker('rm',first);s.docker('volume','rm',first);s.volumes.remove(first)
-  s.run_app(args.image,second,second,env,network);s.volumes.remove(second);base=s.wait_up(second)
+  # Leave the comparison restore untouched: default startup must itself recover an empty volume.
+  s.run_app(args.image,recovered,recovered,env,network);base=s.wait_up(recovered)
   client=s.Client(base,'restore@example.test',password,tmp/'home-b');s.check_records(client,doc,meta)
-  s.check('restored verified database and originals' not in s.logs(second),'no old archive restore')
-  s.check('database exists in the volume: no restore' in s.logs(second),'verified standalone Litestream restore preserved by startup')
-  s.stop(second);s.check_logs(second)
+  restored_admin=s.superuser_token(base,env['WIKICONTEXT_SUPERUSER_EMAIL'],env['WIKICONTEXT_SUPERUSER_PASSWORD'])
+  status,_,maintenance=s.http('GET',base+'/api/context/maintenance',token=restored_admin)
+  s.check(status==200 and maintenance.get('generation')==0 and maintenance.get('state')=='writable',
+      'database-only recovery does not inherit the source maintenance marker')
+  s.check('restored verified database and originals' not in s.logs(recovered),'no old archive restore')
+  s.check('restor' in s.logs(recovered).lower(),'default entrypoint restored an absent database')
+  # Confirm the new API write reached the replica before simulating sudden host loss.
+  late,late_meta=s.write_record(client,user)
+  s.docker('exec',recovered,'litestream','sync','-wait','-timeout','60',
+      '-socket','/run/litestream.sock','/storage/pb_data/data.db')
+  s.docker('kill',recovered)
+  s.check_logs(recovered)
+  crashed=network+'-crash-recovery'
+  s.run_app(args.image,crashed,crashed,env,network);base=s.wait_up(crashed)
+  client=s.Client(base,'restore@example.test',password,tmp/'home-crash')
+  s.check_records(client,doc,meta);s.check_records(client,late,late_meta)
+  s.stop(crashed);s.check_logs(crashed)
+  s.check('litestream shut down' in s.logs(crashed),'Litestream supervises graceful server shutdown')
+  # Each rejected startup uses an empty volume, so S3 verification occurs after restore.
+  def refuse_start(label, supplied):
+   name=network+'-'+label
+   s.run_app(args.image,name,name,supplied,network)
+   deadline=time.monotonic()+90
+   while time.monotonic()<deadline:
+    running,code=s.state_quiet(name)
+    endpoint=s.base_url_quiet(name)
+    s.check(not endpoint or s.http('GET',endpoint+'/up')[0]!=200,label+' never exposes HTTP')
+    if not running:break
+    time.sleep(1)
+   else:raise RuntimeError(label+' failed to terminate')
+   s.check(code!=0,label+' exits with failure')
+   s.check('starting server on port 80' not in s.check_logs(name),label+' refuses serving')
+   s.docker('run','--rm','-v',name+':/storage:ro','--entrypoint','python3',args.image,
+       '-c','from pathlib import Path; assert not Path("/storage/pb_data/data.db").exists()')
+   s.check(True,label+' never installs an unverified restored database')
+  refuse_start('missing-replica',{**env,'LITESTREAM_PATH':'absent/data'})
+  refuse_start('unavailable-originals',{**env,'WIKICONTEXT_S3_ENDPOINT':'http://127.0.0.1:9'})
+  key='/'.join((meta[0],doc,meta[1]))
+  original=tmp/'original';original.write_bytes(meta[2])
+  corrupt=tmp/'corrupt';corrupt.write_bytes(b'Corrupt synthetic original')
+  s.docker('cp',str(corrupt),minio+':/tmp/corrupt')
+  s.docker('exec','-e','MC_HOST_test',minio,'mc','cp','/tmp/corrupt','test/files/'+key,env=mc)
+  refuse_start('corrupt-original',env)
+  s.docker('exec','-e','MC_HOST_test',minio,'mc','rm','test/files/'+key,env=mc)
+  refuse_start('missing-original',env)
+  s.docker('cp',str(original),minio+':/tmp/original')
+  s.docker('exec','-e','MC_HOST_test',minio,'mc','cp','/tmp/original','test/files/'+key,env=mc)
+  # An explicit init cannot replace a populated remote replica even with an empty volume.
+  probe_volume=network+'-init-refused';s.docker('volume','create',probe_volume);s.volumes.append(probe_volume)
+  init_args=['run','--rm','--network',network,'-v',probe_volume+':/storage']
+  for key in env:init_args.extend(['-e',key])
+  status,output=s.docker(*init_args,args.image,'init',env=env,ok=False)
+  s.check(status!=0,'init refuses populated replica')
+  s.check_logs('refused init',output)
   s.check('full-backups/' not in s.docker('exec','-e','MC_HOST_test',minio,'mc','ls','--recursive','test/replica',env=mc)[1],'no complete archives emitted')
  # No-superuser deployments still create a database before the startup handshake.
  bootstrap=network+'-google-only'
  bootstrap_env={key:value for key,value in env.items() if not key.startswith('WIKICONTEXT_SUPERUSER_')}
  bootstrap_env['LITESTREAM_PATH']='google-only/data'
+ s.initialize(args.image,bootstrap,bootstrap_env,network)
  s.run_app(args.image,bootstrap,bootstrap,bootstrap_env,network);s.wait_up(bootstrap)
  s.check('initial replica synchronization complete' in s.logs(bootstrap),'Google-only fresh database synchronized before HTTP')
  s.stop(bootstrap)

@@ -1,3 +1,27 @@
+## Current container recovery contract
+
+The maintained deployment procedure is [docs/deployment.md](docs/deployment.md).
+Production's documented 5 October migration uses S3 originals in `wikicontext-files`
+and Litestream in `wikicontext-replica` under `once-v2/wikicontext-production`.
+The entries below are historical release evidence; their local-original archives,
+old bucket names and bootstrap procedures do not describe the current runtime.
+The single Python entrypoint refactor is not a deployment record and makes no
+claim that the new image has been released or installed.
+
+Local validation on 6 October 2026 passed against the unchanged server pin
+`976ddf71a4734530adefe4a56633658a0894b449`: all documented backend commands,
+37 Python entrypoint tests, 10 file-migration tests, and the synthetic search
+benchmark. Node 24.15.0 and pnpm 10.33.2 passed typecheck, 57 unit tests,
+production build and all eight actual-server browser scenarios.
+
+The ARM64 image built and passed Docker's build check, configuration and smoke
+tests, S3 integration, standalone Litestream recovery and the expanded actual-image
+MinIO recovery drill. Checks included stopped-source database equivalence,
+empty-volume entrypoint restore, confirmed-write crash recovery, frozen restarts,
+missing replicas, unavailable/missing/corrupt originals and failed-restore cleanup.
+All storage was synthetic and isolated. AMD64 execution remains a native CI release
+gate; it was not run locally. No production deployment or cloud changes were made.
+
 ## Packaged CLI and opt-in tracing — 4 October 2026
 
 Deployed source `1a625b7f84370abc2c4719346c27e287a7282165` at `https://wiki.pocketcontext.com`.

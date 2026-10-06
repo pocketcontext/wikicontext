@@ -21,8 +21,15 @@ import urllib.request
 
 import boto3
 from botocore.config import Config
-from backup_integration import load
+import importlib.util
 from integration import ROOT
+
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
 
 
 def object_client(prefix):
@@ -177,7 +184,7 @@ def main():
     binary = str(Path(args.binary).resolve())
     litestream = str(Path(args.litestream).resolve())
     check_unavailable_replica(litestream)
-    backup = load('remote_backup', ROOT / 'docker/backup.py')
+    verifier = load('remote_entrypoint', ROOT / 'docker/entrypoint.py')
     smoke = load('remote_smoke', ROOT / 'docker/smoke.py')
     files, replicas = object_client('WIKICONTEXT_S3_'), object_client('LITESTREAM_')
     uploaded_keys = []
@@ -215,7 +222,7 @@ def main():
                         uploaded_keys.append('/'.join((meta[0], doc, meta[1])))
                         smoke.check_records(client, doc, meta)
                         assert not list((source_data / 'storage').rglob('*'))
-                        backup.verify(source_data)
+                        verifier.verify(source_data)
                     finally:
                         proc.terminate()
                         proc.wait(timeout=30)
@@ -231,7 +238,7 @@ def main():
             shutil.rmtree(source_data)
             assert not source_data.exists()
             assert not (restored / 'storage').exists()
-            backup.verify(restored)
+            verifier.verify(restored)
             with socket.socket() as sock:
                 sock.bind(('127.0.0.1', 0))
                 port = sock.getsockname()[1]

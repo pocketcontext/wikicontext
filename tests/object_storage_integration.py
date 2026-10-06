@@ -14,12 +14,20 @@ import subprocess
 import tempfile
 import time
 import urllib.request
+import urllib.error
 from unittest.mock import patch
 
 import boto3
 from botocore.config import Config
-from backup_integration import load
+import importlib.util
 from integration import ROOT, server
+
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
 
 
 def main():
@@ -36,7 +44,7 @@ def main():
         aws_access_key_id=os.environ['WIKICONTEXT_S3_ACCESS_KEY_ID'],
         aws_secret_access_key=os.environ['WIKICONTEXT_S3_SECRET_ACCESS_KEY'],
         config=Config(s3={'addressing_style': 'path'}))
-    backup = load('remote_backup', ROOT / 'docker/backup.py')
+    verifier = load('remote_entrypoint', ROOT / 'docker/entrypoint.py')
     smoke = load('remote_smoke', ROOT / 'docker/smoke.py')
     with tempfile.TemporaryDirectory(prefix='wikicontext-s3-test-') as tmp, ExitStack() as stack:
         request = stack.enter_context(server(args.binary))
@@ -47,10 +55,28 @@ def main():
         doc, meta = smoke.write_record(client, user)
         key = '/'.join((meta[0], doc, meta[1]))
         try:
+            # Failed destructive requests must preserve the exact upload and its hash,
+            # including operator requests: backup consistency relies on immutability.
+            path = '/api/collections/sources/records/' + doc
+            for token in (client.token, admin):
+                for changes in ({'original': ''}, {'sha256': '0' * 64}, {'title': 'overwritten'}):
+                    request('PATCH', path, changes, token=token, expected=(400, 403))
+                request('DELETE', path, token=token, expected=(400, 403))
+                boundary = 'synthetic-replacement'
+                body = (f'--{boundary}\r\nContent-Disposition: form-data; name="original"; filename="replacement.txt"\r\n'
+                        f'Content-Type: text/plain\r\n\r\nSynthetic replacement\r\n--{boundary}--\r\n').encode()
+                replacement = urllib.request.Request(request.base_url + path, data=body, method='PATCH',
+                    headers={'Authorization': token, 'Content-Type': 'multipart/form-data; boundary=' + boundary})
+                try:
+                    urllib.request.urlopen(replacement, timeout=10).close()
+                except urllib.error.HTTPError as error:
+                    assert error.code in (400, 403)
+                else:
+                    raise AssertionError('original replacement was allowed')
             smoke.check_records(client, doc, meta)
             assert not (request.data_dir / 'storage' / key).exists()
             assert s3.get_object(Bucket=bucket, Key=key)['Body'].read() == meta[2]
-            backup.verify(request.data_dir)
+            verifier.verify(request.data_dir)
             # Database-only recovery must work without any local original-file copies.
             restored = Path(tmp) / 'restored'
             restored.mkdir()
@@ -58,11 +84,11 @@ def main():
                 with closing(sqlite3.connect(restored / 'data.db')) as dest:
                     source.backup(dest)
             stack.close()  # Stop the original writer before opening the recovered database.
-            backup.verify(restored)
+            verifier.verify(restored)
             without_s3 = {key: value for key, value in os.environ.items() if not key.startswith('WIKICONTEXT_S3_')}
             with patch.dict(os.environ, without_s3, clear=True):
-                try: backup.verify(restored)
-                except RuntimeError: pass
+                try: verifier.verify(restored)
+                except verifier.StartupError: pass
                 else: raise AssertionError('stored remote configuration accepted without S3 environment')
             with socket.socket() as sock:
                 sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
@@ -83,11 +109,11 @@ def main():
                 finally:
                     proc.terminate(); proc.wait(timeout=15)
             s3.put_object(Bucket=bucket, Key=key, Body=b'Corrupted synthetic original')
-            try: backup.verify(restored)
-            except RuntimeError: pass
+            try: verifier.verify(restored)
+            except verifier.StartupError: pass
             else: raise AssertionError('corrupt original accepted')
             s3.delete_object(Bucket=bucket, Key=key)
-            try: backup.verify(restored)
+            try: verifier.verify(restored)
             except Exception: pass
             else: raise AssertionError('missing original accepted')
         finally:

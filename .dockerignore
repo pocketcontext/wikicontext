@@ -5,9 +5,8 @@
 !pocketcontext.json
 !pb_migrations/*.js
 !pb_hooks/*.js
-!docker/entrypoint.sh
+!docker/entrypoint.py
 !docker/litestream.yml
-!docker/backup.py
 !ui/
 !ui/package.json
 !ui/pnpm-lock.yaml

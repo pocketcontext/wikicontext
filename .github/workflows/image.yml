@@ -53,8 +53,6 @@ jobs:
         run: python3 docker/smoke.py config --image wikicontext:ci
       - name: Smoke test
         run: python3 docker/smoke.py smoke --image wikicontext:ci
-      - name: Restore drill
-        run: python3 docker/smoke.py restore --image wikicontext:ci
       - name: Object storage and strict Litestream recovery
         run: python3 docker/object_storage_smoke.py --image wikicontext:ci --minio-image wikicontext-minio-fixture:9e49d5e-7394ce0
 

@@ -142,14 +142,12 @@ python3 tests/ingest_integration.py --binary /absolute/path/to/pinned/pocketcont
 python3 tests/export_integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/deploy.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/maintenance.py --binary /absolute/path/to/pinned/pocketcontext
-python3 tests/maintenance_entrypoint.py
-python3 tests/backup_integration.py --binary /absolute/path/to/pinned/pocketcontext
+python3 tests/entrypoint.py
 python3 tests/oauth.py
 python3 tests/client.py
 python3 tests/knowledge.py
 python3 tests/ingest.py
 python3 tests/exporter.py
-python3 tests/backup.py
 python3 tests/bootstrap.py
 python3 tests/deploy_workflow.py
 ```
@@ -181,7 +179,7 @@ Welcome search, topic navigation, responsive evidence layout, protected image
 enlargement, historical views and session isolation.
 
 CI runs reader type checks, unit tests and the production browser suite before
-image publication. Container smoke checks also verify the shell and bundled assets.
+image publication. Container smoke checks also verify the Python entrypoint and bundled assets.
 
 Regenerate the SQL reference only after reviewing intentional changes: `tests/skill.py --binary ... --write-schema`. Container CI additionally runs configuration, persistence, crash restore and graceful shutdown checks. Main-branch image publication is gated on application tests and native container checks; deployment additionally requires the configured `COLORS_PROFILE` environment. Native AMD64/ARM64 container checks passed in release CI. A real Google browser login and live Groq transcription remain unverified; see the release record.
 
@@ -202,7 +200,9 @@ The pinned server enables an authenticated, bounded in-memory trace buffer for `
 
 ## Object storage deployment
 
-The application supports private PocketBase S3 file storage.
+The production container requires Litestream replication and private PocketBase S3 file storage.
+The application can still run directly for isolated local development; the container
+has no local-originals or replication-disabled mode.
 Set all of `WIKICONTEXT_S3_BUCKET`, `WIKICONTEXT_S3_ENDPOINT`,
 `WIKICONTEXT_S3_REGION`, `WIKICONTEXT_S3_ACCESS_KEY_ID` and
 `WIKICONTEXT_S3_SECRET_ACCESS_KEY`. Optional `WIKICONTEXT_S3_FORCE_PATH_STYLE`
@@ -214,11 +214,14 @@ During a frozen restart, these values must match the stored backend and
 credentials exactly; configuration changes are refused until an explicit thaw.
 
 With this contract enabled, startup preserves a healthy local database or restores
-an absent database from Litestream. Before HTTP starts, the supervised child calls
+an absent database from Litestream. Normal startup fails if the replica is absent;
+first installation uses the explicit one-shot `init` command with an empty replica
+target, followed by normal startup on the same volume. See the command examples
+in [deployment procedures](docs/deployment.md). Before HTTP starts, the supervised child calls
 Litestream's private mode-0600 IPC socket with `sync -wait`, forcing database
 initialization and a completed initial remote sync. Startup intentionally requires
 a reachable replica; missing IPC or failed synchronization refuses serving.
-Google-only fresh deployments bootstrap the database with migrations before this
+Explicit `init` deployments bootstrap the database with migrations before this
 handshake. This closes Litestream 0.5.17's early-stop gap: before its first monitor
 tick, an uninitialized database otherwise skips final replication on shutdown. It never restores the legacy complete archive,
 and no archive scheduler runs. Before opening the server, it streams every original
@@ -229,7 +232,9 @@ fields use the same storage backend; the integrity gate specifically covers sour
 
 Setting S3 does not migrate existing local files. Use the verified file-copy
 procedure in [the migration runbook](tools/MIGRATION.md) before enabling remote
-storage on an existing dataset. Local-storage deployments retain complete backup behavior. Do not
+storage on an existing dataset. The container no longer supports local originals,
+complete archives, archive retention or backup scheduling. Historical archives
+remain recoverable with the pinned older image described in the deployment guide. Do not
 remove S3 configuration from a remote deployment or run legacy archive commands
 against it. Litestream and file storage must use separate buckets and credentials.
 Keep object retention at least as long as database recovery history. SQLite and S3
@@ -258,9 +263,9 @@ and deletes its own object to prove verification fails closed.
 `.github/workflows/experiment.yml` runs on pushes to exactly
 `experiment/object-storage`, using GitHub environment `once-v2`. That worktree
 restricts its workflows to its own branch. Main retains the production image and
-deployment workflow, with both legacy and object-storage recovery release gates.
+deployment workflow, with S3 originals and Litestream recovery release gates.
 The reusable test workflow keeps the same branch guard. Publication gates on the
-complete reusable backend/reader suite, native ARM64 image checks, legacy recovery,
+complete reusable backend/reader suite, native ARM64 image checks
 and `docker/object_storage_smoke.py` for real S3/Litestream fresh-volume recovery.
 It publishes to the separate `ghcr.io/pocketcontext/wikicontext-v2` package
 using unique `experiment-SHA-RUN-ATTEMPT` tags plus this separate package’s `latest`. The whole workflow is serialized, including tag

@@ -95,17 +95,18 @@ def state(name):
     return running == 'true', int(code)
 
 
-def run_app(image, name, volume, env, network=None):
+def run_app(image, name, volume, env, network=None, command=()):
     """Start the image detached with a named volume at /storage and port 80 published on a free local port."""
     docker('volume', 'create', volume)
-    volumes.append(volume)
+    if volume not in volumes:
+        volumes.append(volume)
     args = ['run', '-d', '--name', name, '-p', '127.0.0.1::80', '-v', f'{volume}:/storage']
     if network:
         args += ['--network', network]
     for key in env:
         args += ['-e', key]
     containers.append(name)
-    docker(*args, image, env=env)
+    docker(*args, image, *command, env=env)
 
 
 def http(method, url, body=None, token=None, headers=None):
@@ -365,11 +366,12 @@ def once_env(extra=None):
 
 def smoke(image, tmp, run_id):
     name, volume = f'wc-smoke-{run_id}', f'wc-smoke-{run_id}'
-    env = once_env({'LITESTREAM_DISABLED': 'true'})
+    network, env = minio_fixture(run_id)
     user_email, user_password = 'user@example.test', secret(secrets.token_urlsafe(24))
 
-    step('starting the image with the ONCE variables, LITESTREAM_DISABLED=true, a superuser, and a volume at /storage')
-    run_app(image, name, volume, env)
+    step('explicitly initializing a synthetic database, then starting with S3 and Litestream')
+    initialize(image, volume, env, network)
+    run_app(image, name, volume, env, network)
     base = wait_up(name)
     step('static reader and bundled assets are available with restrictive browser headers')
     status, headers, html = http('GET', base + '/')
@@ -455,124 +457,97 @@ def expect_startup_error(image, title, env, named, not_named=()):
 
 
 def config(image, tmp, run_id):
-    required = ['LITESTREAM_BUCKET', 'LITESTREAM_PATH', 'LITESTREAM_ACCESS_KEY_ID', 'LITESTREAM_SECRET_ACCESS_KEY']
-    expect_startup_error(image, 'no variables at all: replication is required unless it is switched off', {}, required)
-    expect_startup_error(image, 'only the secret key is missing',
-                         {'LITESTREAM_BUCKET': 'bucket', 'LITESTREAM_PATH': 'check/data', 'LITESTREAM_ACCESS_KEY_ID': 'key'},
-                         ['LITESTREAM_SECRET_ACCESS_KEY'], ['LITESTREAM_BUCKET', 'LITESTREAM_PATH', 'LITESTREAM_ACCESS_KEY_ID'])
-    expect_startup_error(image, 'LITESTREAM_DISABLED=1 is not exactly "true"', {'LITESTREAM_DISABLED': '1'}, required + ["exactly 'true'"])
-    expect_startup_error(image, 'a superuser email without a password', {'LITESTREAM_DISABLED': 'true', 'WIKICONTEXT_SUPERUSER_EMAIL': 'operator@example.test'},
+    configured = {
+        'WIKICONTEXT_S3_BUCKET': 'files', 'WIKICONTEXT_S3_ENDPOINT': 'http://127.0.0.1:9',
+        'WIKICONTEXT_S3_REGION': 'us-east-1', 'WIKICONTEXT_S3_ACCESS_KEY_ID': 'synthetic',
+        'WIKICONTEXT_S3_SECRET_ACCESS_KEY': secret(secrets.token_hex(24)),
+        'LITESTREAM_BUCKET': 'replica', 'LITESTREAM_PATH': 'test/data',
+        'LITESTREAM_ENDPOINT': 'http://127.0.0.1:9', 'LITESTREAM_REGION': 'us-east-1',
+        'LITESTREAM_ACCESS_KEY_ID': 'synthetic',
+        'LITESTREAM_SECRET_ACCESS_KEY': secret(secrets.token_hex(24)),
+    }
+    for key in ('WIKICONTEXT_S3_BUCKET', 'WIKICONTEXT_S3_ENDPOINT', 'WIKICONTEXT_S3_REGION',
+                'WIKICONTEXT_S3_ACCESS_KEY_ID', 'WIKICONTEXT_S3_SECRET_ACCESS_KEY',
+                'LITESTREAM_BUCKET', 'LITESTREAM_PATH', 'LITESTREAM_ACCESS_KEY_ID',
+                'LITESTREAM_SECRET_ACCESS_KEY'):
+        expect_startup_error(image, 'missing required variable ' + key,
+                             {name: value for name, value in configured.items() if name != key}, [key])
+    expect_startup_error(image, 'replication cannot be disabled',
+                         {**configured, 'LITESTREAM_DISABLED': 'true'}, ['LITESTREAM_DISABLED'])
+    expect_startup_error(image, 'a superuser email without a password',
+                         {**configured, 'WIKICONTEXT_SUPERUSER_EMAIL': 'operator@example.test'},
                          ['WIKICONTEXT_SUPERUSER_PASSWORD'])
-
     expect_startup_error(image, 'a Google client ID without a secret',
-                         {'LITESTREAM_DISABLED': 'true', 'WIKICONTEXT_GOOGLE_CLIENT_ID': 'image-test.apps.googleusercontent.com'},
+                         {**configured, 'WIKICONTEXT_GOOGLE_CLIENT_ID': 'synthetic.apps.googleusercontent.com'},
                          ['WIKICONTEXT_GOOGLE_CLIENT_SECRET'])
     expect_startup_error(image, 'a Google secret without a client ID',
-                         {'LITESTREAM_DISABLED': 'true', 'WIKICONTEXT_GOOGLE_CLIENT_SECRET': secret(secrets.token_urlsafe(24))},
+                         {**configured, 'WIKICONTEXT_GOOGLE_CLIENT_SECRET': secret(secrets.token_hex(24))},
                          ['WIKICONTEXT_GOOGLE_CLIENT_ID'])
-
-    step('a replica that cannot be reached: Litestream keeps retrying or fails, and the server never starts on an empty database')
+    step('unavailable replica must never serve an empty database')
     name = f'wc-config-{run_id}'
-    env = {'LITESTREAM_BUCKET': 'bucket', 'LITESTREAM_PATH': 'check/data', 'LITESTREAM_REGION': 'us-east-1', 'LITESTREAM_ENDPOINT': 'http://127.0.0.1:9',
-           'LITESTREAM_ACCESS_KEY_ID': 'key', 'LITESTREAM_SECRET_ACCESS_KEY': secret(secrets.token_hex(16))}
-    run_app(image, name, f'wc-config-{run_id}', env)
+    run_app(image, name, name, configured)
     time.sleep(20)
     running, code = state(name)
     text = check_logs(name)
-    say('    output: ' + text.strip()[-1500:].replace('\n', '\n            '))
-    check('Server started' not in text and 'starting server' not in text, 'after 20 seconds the server has not started')
-    check(running or code != 0, f'the container is still retrying or exited with an error (running: {running}, status: {code})')
+    check('starting server' not in text and 'Server started' not in text,
+          'unavailable replica prevents HTTP startup')
+    check(running or code != 0, 'unavailable replica retries or fails')
+    # SIGTERM while recovery is pending must not leave an orphaned child.
+    if running:
+        started = time.monotonic()
+        docker('stop', '-t', '10', name)
+        running, code = state(name)
+        check(not running and code != 137 and time.monotonic() - started < 10,
+              'interrupted startup terminates without SIGKILL')
+
+
+def minio_fixture(run_id):
+    """Disposable private S3 buckets used only for synthetic container checks."""
+    docker('build', '--file', str(ROOT / 'docker/minio.Dockerfile'), '--tag', MINIO_IMAGE,
+           str(ROOT / 'docker'), timeout=1200)
+    network, minio = 'wc-s3-' + run_id, 'wc-minio-' + run_id
+    docker('network', 'create', network)
+    networks.append(network)
+    access, password = 'synthetic' + run_id, secret(secrets.token_hex(24))
+    mc = {'MC_HOST_test': secret(f'http://{access}:{password}@127.0.0.1:9000')}
+    containers.append(minio)
+    docker('run', '-d', '--name', minio, '--network', network, '-e', 'MINIO_ROOT_USER',
+           '-e', 'MINIO_ROOT_PASSWORD', MINIO_IMAGE, 'server', '/data',
+           env={'MINIO_ROOT_USER': access, 'MINIO_ROOT_PASSWORD': password})
+    for _ in range(60):
+        status, _ = docker('exec', '-e', 'MC_HOST_test', minio, 'mc', 'mb', '--ignore-existing',
+                           'test/files', 'test/replica', env=mc, ok=False)
+        if status == 0:
+            break
+        time.sleep(1)
+    else:
+        raise Failure('synthetic MinIO fixture did not become ready')
+    return network, once_env({
+        'WIKICONTEXT_S3_BUCKET': 'files', 'WIKICONTEXT_S3_ENDPOINT': f'http://{minio}:9000',
+        'WIKICONTEXT_S3_REGION': 'us-east-1', 'WIKICONTEXT_S3_ACCESS_KEY_ID': access,
+        'WIKICONTEXT_S3_SECRET_ACCESS_KEY': password, 'LITESTREAM_BUCKET': 'replica',
+        'LITESTREAM_PATH': 'test/data', 'LITESTREAM_ENDPOINT': f'http://{minio}:9000',
+        'LITESTREAM_REGION': 'us-east-1', 'LITESTREAM_ACCESS_KEY_ID': access,
+        'LITESTREAM_SECRET_ACCESS_KEY': password})
+
+
+def initialize(image, volume, env, network):
+    docker('volume', 'create', volume)
+    if volume not in volumes:
+        volumes.append(volume)
+    args = ['run', '--rm', '--network', network, '-v', f'{volume}:/storage']
+    for key in env:
+        args.extend(['-e', key])
+    docker(*args, image, 'init', env=env)
 
 
 def restore(image, tmp, run_id):
-    network, minio, bucket = f'wc-drill-{run_id}', f'wc-drill-minio-{run_id}', 'wikicontext-drill'
-    minio_user, minio_password = 'drill' + secrets.token_hex(4), secret(secrets.token_hex(20))
-    mc_env = {'MC_HOST_drill': secret(f'http://{minio_user}:{minio_password}@127.0.0.1:9000')}
-    user_email, user_password = 'user@example.test', secret(secrets.token_urlsafe(24))
-
-    step('building the CI-only MinIO fixture from pinned official source commits')
-    docker('build', '--file', str(ROOT / 'docker/minio.Dockerfile'), '--tag', MINIO_IMAGE, str(ROOT / 'docker'), timeout=1200)
-    step('starting MinIO as the S3 service on a private docker network')
-    docker('network', 'create', network)
-    networks.append(network)
-    containers.append(minio)
-    docker('run', '-d', '--name', minio, '--network', network, '-e', 'MINIO_ROOT_USER', '-e', 'MINIO_ROOT_PASSWORD', MINIO_IMAGE, 'server', '/data',
-           env={'MINIO_ROOT_USER': minio_user, 'MINIO_ROOT_PASSWORD': minio_password})
-    deadline = time.time() + 90
-    while True:
-        status, text = docker('exec', '-e', 'MC_HOST_drill', minio, 'mc', 'mb', '--ignore-existing', f'drill/{bucket}', env=mc_env, ok=False)
-        if status == 0:
-            break
-        if time.time() > deadline:
-            raise Failure(f'MinIO did not accept a bucket within 90 seconds:\n{text}')
-        time.sleep(2)
-    check(True, f'bucket {bucket} exists')
-
-    def app_env(sync_interval):
-        return once_env({'LITESTREAM_BUCKET': bucket, 'LITESTREAM_PATH': f'drill-{run_id}/data', 'LITESTREAM_REGION': 'us-east-1',
-                         'LITESTREAM_ENDPOINT': f'http://{minio}:9000', 'LITESTREAM_ACCESS_KEY_ID': minio_user,
-                         'LITESTREAM_SECRET_ACCESS_KEY': minio_password, 'LITESTREAM_SYNC_INTERVAL': sync_interval, 'WIKICONTEXT_BACKUP_INTERVAL': '5'})
-
-    def replica_files():
-        text = docker('exec', '-e', 'MC_HOST_drill', minio, 'mc', 'ls', '--recursive', f'drill/{bucket}/drill-{run_id}/', env=mc_env, ok=False)[1]
-        say('    ' + text.strip().replace('\n', '\n    '))
-        return text.count('.ltx')
-
-    def destroy(name, volume):
-        docker('rm', '-f', '-v', name)
-        docker('volume', 'rm', volume)
-        volumes.remove(volume)
-        status, _ = docker('volume', 'inspect', volume, ok=False)
-        check(status != 0, f'container {name} and volume {volume} are gone')
-
-    first, second, third = (f'wc-drill-{letter}-{run_id}' for letter in 'abc')
-
-    step('container A: empty volume, empty replica, sync every second')
-    env = app_env('1s')
-    run_app(image, first, first, env, network)
-    base = wait_up(first)
-    token = superuser_token(base, env['WIKICONTEXT_SUPERUSER_EMAIL'], env['WIKICONTEXT_SUPERUSER_PASSWORD'])
-    user_id = provision_user(base, token, user_email, user_password)
-    client = Client(base, user_email, user_password, tmp / 'home-a')
-    organization, unused = write_record(client, user_id)
-    step('waiting 10 seconds for the sync, then listing the replica')
-    time.sleep(15)
-    check('uploaded verified database and originals' in logs(first), 'a complete snapshot was uploaded')
-    check(replica_files() > 0, 'the replica holds LTX files')
-    step('disaster: kill container A without a shutdown, remove it and its volume')
-    docker('kill', first)
-    text = check_logs(first)
-    check('the replica holds no backup' in text, 'container A started from an empty replica')
-    destroy(first, first)
-
-    step('container B: empty volume, same replica, sync once an hour so that only the shutdown sync can save a late write')
-    env = app_env('1h')
-    run_app(image, second, second, env, network)
-    base = wait_up(second)
-    client = Client(base, user_email, user_password, tmp / 'home-b')
-    check(json.loads(client.run('whoami'))['id'] == user_id, 'the user logs in with its password after the restore')
-    check_records(client, organization, unused)
-    client.run('check')
-    text = logs(second)
-    check('restored verified database and originals' in text, 'complete snapshot restored before startup')
-    superuser_token(base, env['WIKICONTEXT_SUPERUSER_EMAIL'], env['WIKICONTEXT_SUPERUSER_PASSWORD'])
-
-    step('a write immediately before docker stop must reach the replica through the shutdown sync')
-    late, late_metadata = write_record(client, user_id)
-    stop(second)
-    text = check_logs(second)
-    check('litestream shut down' in text, 'Litestream received the signal and shut down after the server')
-    destroy(second, second)
-
-    step('container C: empty volume again; the late write must be there')
-    run_app(image, third, third, app_env('1s'), network)
-    base = wait_up(third)
-    client = Client(base, user_email, user_password, tmp / 'home-c')
-    check_records(client, organization, unused)
-    check_records(client, late, late_metadata)
-    check_logs(third)
-    stop(third)
-    check_logs(minio)
+    # Keep the historical CI command as an alias for the supported recovery drill.
+    docker('build', '--file', str(ROOT / 'docker/minio.Dockerfile'), '--tag', MINIO_IMAGE,
+           str(ROOT / 'docker'), timeout=1200)
+    result = subprocess.run([sys.executable, str(ROOT / 'docker/object_storage_smoke.py'),
+                             '--image', image, '--minio-image', MINIO_IMAGE])
+    check(result.returncode == 0, 'S3 originals and strict Litestream recovery drill')
 
 
 def report_and_clean(failed):
@@ -583,10 +558,9 @@ def report_and_clean(failed):
             text = logs(name)
             say(f'---- logs of {name} (masked) ----')
             say(text)
-            say(docker('inspect', '-f', 'state: {{json .State}}', name, ok=False)[1])
+            say(docker('inspect', '-f', 'running: {{.State.Running}} exit: {{.State.ExitCode}} oom: {{.State.OOMKilled}}', name, ok=False)[1])
             if os.environ.get('GITHUB_ACTIONS') == 'true':
                 say('::endgroup::')
-        say(docker('ps', '-a', ok=False)[1])
     step('cleaning up')
     for name in containers:
         docker('rm', '-f', '-v', name, ok=False)

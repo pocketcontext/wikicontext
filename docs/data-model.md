@@ -35,7 +35,7 @@ Realtime events invalidate its view; authenticated SQL supplies content, and all
 page, citation and backlink reads remain pinned to one publication. Historical
 views stay pinned. Browser rendering never ingests Markdown or changes records.
 
-Complete backups include a consistent database snapshot and every immutable source original referenced by it, verified by hashes. In local-storage mode, database-only replication cannot establish complete recovery. In the experimental S3 mode, originals remain immutable in a dedicated private bucket; Litestream recovers SQLite and startup verifies every referenced remote original before admitting traffic. Recovery requires both services and retained objects. No direct SQLite business writes or migrations ingest knowledge. Tests use isolated synthetic data.
+The production container stores immutable originals in a dedicated private S3 bucket. Litestream recovers SQLite and startup verifies every referenced remote original by its recorded hash before admitting traffic. Local-original archives are historical recovery artifacts and are no longer produced or restored by the container. Recovery requires both services and retained objects. No direct SQLite business writes or migrations ingest knowledge. Tests use isolated synthetic data.
 
 Initial scope: text/Markdown/PDF/audio and reviewed-image ingestion helpers, agent synthesis and question workflows, revisioned publication, citations and links, structural lint, deterministic Obsidian export, auth and recovery preparation. No automatic web crawling, background autonomous LLM service, native vector dependency, two-way Obsidian synchronization, external messaging, cloud provisioning or real-data migration is included in this local implementation.
 

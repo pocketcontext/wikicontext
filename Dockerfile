@@ -8,8 +8,8 @@
 # - PocketContext: the commit in POCKETCONTEXT_VERSION; its Go modules are verified against go.sum.
 # - Litestream: version and SHA-256 of the release archives, from the release's checksums.txt
 #   (the same values as the asset digests of the GitHub release API).
-# Not pinned: the Debian packages ca-certificates and tini, which come from the stable archive
-# at build time so that certificate updates are included.
+# Debian packages (ca-certificates, tini, Python and boto3) are not version-pinned.
+# They refresh only when this install layer is rebuilt; cached builds do not fetch updates.
 
 FROM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS reader
 WORKDIR /ui
@@ -70,8 +70,7 @@ RUN apt-get update \
 
 COPY --from=build /out/pocketcontext /out/litestream /usr/local/bin/
 COPY docker/litestream.yml /etc/litestream.yml
-COPY --chmod=0755 docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-COPY docker/backup.py /usr/local/bin/wikicontext-backup.py
+COPY --chmod=0755 docker/entrypoint.py /usr/local/bin/wikicontext-entrypoint.py
 WORKDIR /app
 COPY POCKETCONTEXT_VERSION pocketcontext.json ./
 COPY pb_migrations/ ./pb_migrations/
@@ -80,10 +79,10 @@ COPY --from=reader /ui/dist/ ./ui/dist/
 
 # The container runs as root. ONCE creates and mounts the /storage volume and offers no option to
 # set its owner or the container's user, and the server binds port 80.
-ENV WIKICONTEXT_RATE_LIMITS=true WIKICONTEXT_BACKUP_PRUNE=true
+ENV WIKICONTEXT_RATE_LIMITS=true
 VOLUME /storage
 EXPOSE 80
-ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/wikicontext-entrypoint.py"]
 
 ARG REVISION=unknown
 ENV WIKICONTEXT_REVISION=${REVISION}

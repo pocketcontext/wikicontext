@@ -4,13 +4,13 @@ import argparse
 import concurrent.futures
 import contextlib
 import json
-import importlib.util
 import sqlite3
 from pathlib import Path
 import statistics
 import tempfile
 import time
 
+from snapshot import snapshot
 from integration import ROOT, credentials
 from search_integration import Fixture, running
 
@@ -19,11 +19,9 @@ def identifier(prefix,n):return prefix+f'{n:014d}'
 
 
 def storage_stats(data):
-    """Physical allocation only, from a verified complete synthetic backup."""
-    spec=importlib.util.spec_from_file_location('benchmark_backup',ROOT/'docker/backup.py')
-    backup=importlib.util.module_from_spec(spec);spec.loader.exec_module(backup)
+    """Physical allocation only, from a consistent synthetic database snapshot."""
     with tempfile.TemporaryDirectory(prefix='wikicontext-search-size-') as directory:
-        dest=Path(directory)/'snapshot';backup.snapshot(data,dest)
+        dest=Path(directory)/'snapshot';snapshot(data,dest)
         with sqlite3.connect(f"file:{dest/'data.db'}?mode=ro",uri=True) as db:
             fts=db.execute("SELECT coalesce(sum(pgsize),0) FROM dbstat WHERE name GLOB 'published_pages_fts*'").fetchone()[0]
             state=db.execute("SELECT coalesce(sum(pgsize),0) FROM dbstat WHERE name='search_state' OR name GLOB 'sqlite_autoindex_search_state_*'").fetchone()[0]
