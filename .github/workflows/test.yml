@@ -1,7 +1,5 @@
 name: Wiki integration
 on:
-  push:
-  pull_request:
   # Release publication requires this complete application test suite.
   workflow_call:
 permissions:
@@ -21,7 +19,7 @@ jobs:
       - name: Install packaged CLI
         run: |
           python3 -m venv "$RUNNER_TEMP/client-venv"
-          "$RUNNER_TEMP/client-venv/bin/python" -m pip install uv ./wikicontext
+          "$RUNNER_TEMP/client-venv/bin/python" -m pip install uv==0.12.21 ./wikicontext
           echo "$RUNNER_TEMP/client-venv/bin" >> "$GITHUB_PATH"
       - name: Test standalone launcher
         run: python3 wikicontext/tests/launcher.py

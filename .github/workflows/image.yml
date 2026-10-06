@@ -7,8 +7,8 @@ on:
 permissions:
   contents: read
 
-# On main, runs wait for each other, so `latest` always ends at the newest commit. Elsewhere a new
-# push cancels the run of the previous one.
+# Serialize main releases without cancelling an active deployment. GitHub does not
+# guarantee commit order; explicit current-main checks reject stale reruns.
 concurrency:
   group: image-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -56,9 +56,8 @@ jobs:
       - name: Object storage and strict Litestream recovery
         run: python3 docker/object_storage_smoke.py --image wikicontext:ci --minio-image wikicontext-minio-fixture:9e49d5e-7394ce0
 
-  # Main only, from here on (a push, or a manual run on main). The Python tests gate the publication.
+  # Application validation runs once on every event, including pull requests.
   tests:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     uses: ./.github/workflows/test.yml
     permissions:
       contents: read
@@ -164,6 +163,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: Require current main revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          if [[ ! "$head" =~ ^[0-9a-f]{40}$ || "$head" != "$GITHUB_SHA" ]]; then
+            echo 'Refusing stale release: workflow revision is not current main.' >&2
+            exit 1
+          fi
       - name: Create and push the manifest list
         working-directory: /tmp/digests
         run: |
@@ -220,8 +229,9 @@ jobs:
             --notes-file "$RUNNER_TEMP/release-notes.md"
 
   deploy:
-    if: github.ref == 'refs/heads/main' && vars.COLORS_PROFILE != ''
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.CONTEXT_DEPLOY_PAUSED != 'true' && vars.COLORS_PROFILE != ''
     needs:
+      - manifest
       - image-release
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -234,6 +244,16 @@ jobs:
       group: deploy-${{ vars.COLORS_PROFILE }}
       cancel-in-progress: false
     steps:
+      - name: Require current main revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')
+          if [[ ! "$head" =~ ^[0-9a-f]{40}$ || "$head" != "$GITHUB_SHA" ]]; then
+            echo 'Refusing stale release: workflow revision is not current main.' >&2
+            exit 1
+          fi
       - name: Deploy via SSH
         env:
           # The public package needs only the restricted deployment key.
@@ -249,15 +269,15 @@ jobs:
 
           # Pinned by ONCE at provisioning time, not scanned here. Fail closed.
           if [ -z "$SSH_KNOWN_HOSTS" ]; then
-            echo "SSH_KNOWN_HOSTS is unset - run 'once create' to publish it" >&2
+            echo "SSH_KNOWN_HOSTS is unset; configure the once-pocketcontext-v2 deployment environment" >&2
             exit 1
           fi
           printf '%s\n' "$SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
 
-          # No remote command or registry credentials. The forced command selects
-          # the permitted host and applies its stop-first deployment policy.
+          # The fixed shared dispatcher accepts no remote command or registry credentials.
+          # It resolves latest to a digest; the workflow does not attest the live source revision.
           test "$SERVER_USER" = deploy
-          ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes "$SERVER_USER@$SERVER_IP" </dev/null
+          ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes "$SERVER_USER@$SERVER_IP" < /dev/null
       - name: Verify public health
         run: |
           # /up executes a database query, so HTTP 200 also checks database availability.

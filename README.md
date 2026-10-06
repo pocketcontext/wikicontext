@@ -1,5 +1,7 @@
 # WikiContext
 
+Current release controls and platform coverage: [common CI and deployment contract](docs/ci-and-deployment.md).
+
 An agent-maintained knowledge base on PocketContext. Sources, extracted passages, versioned pages, citations, links and publication history live in WikiContext. The browser reader renders published pages and updates when agents publish. Obsidian consumes a reproducible Markdown export. Ingestion and agent questions use the portable skill and authenticated APIs.
 
 All admitted Workspace users share read/write access. PocketBase's existing default `users` collection supplies identities, with verified Workspace Google JIT and public signup blocked. New logins gain shared content access, never account administration. Operators disable accounts to revoke application sessions; Google suspension alone does not revoke an existing session. Re-enabling requires fresh login. Seven-day tokens renew during active Google client use.
@@ -258,29 +260,13 @@ one line. The test uploads synthetic evidence, proves protected downloads and
 remote hashing, restores a database with no local files, then deliberately corrupts
 and deletes its own object to prove verification fails closed.
 
-## Isolated experiment CD (separate branch)
+## Historical object-storage experiment
 
-`.github/workflows/experiment.yml` runs on pushes to exactly
-`experiment/object-storage`, using GitHub environment `once-v2`. That worktree
-restricts its workflows to its own branch. Main retains the production image and
-deployment workflow, with S3 originals and Litestream recovery release gates.
-The reusable test workflow keeps the same branch guard. Publication gates on the
-complete reusable backend/reader suite, native ARM64 image checks
-and `docker/object_storage_smoke.py` for real S3/Litestream fresh-volume recovery.
-It publishes to the separate `ghcr.io/pocketcontext/wikicontext-v2` package
-using unique `experiment-SHA-RUN-ATTEMPT` tags plus this separate package’s `latest`. The whole workflow is serialized, including tag
-publication and deployment. ONCE policy tracks the separate package’s latest tag and resolves its
-immutable digest before stopping; initial provisioning can pin a validated digest.
-
-Environment `once-v2` must contain `SSH_PRIVATE_KEY`, `SERVER_IP`, `SERVER_USER=deploy`
-and pinned `SSH_KNOWN_HOSTS`. The key must authorize only the experimental host's
-forced command. No remote command or registry credentials are sent. The new
-package must be made publicly pullable, or an operator must separately configure
-root Docker registry authentication. Verification requires `/up` and the image's
-non-secret `X-WikiContext-Revision` header to match the workflow commit.
-The experimental worktree removes inherited production publication/deployment
-jobs. Its deployment key must be retired before promoting that host to production;
-production receives a separate main-only deployment environment and key.
+The separate experiment workflow has been removed. Production uses only the
+main-only `once-v2` environment and common guarded release workflow. The retained
+verification tools below are historical operator tools, not automatic deployment
+paths or authorization to modify a live service. See the
+[common CI and deployment contract](docs/ci-and-deployment.md).
 
 For the standalone recovery test, set disposable MinIO S3 and Litestream settings
 and run `python3 tests/object_storage_recovery.py --binary PINNED_SERVER
