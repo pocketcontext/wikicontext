@@ -2,6 +2,7 @@
 import math
 import re
 from . import cli as wc
+from . import properties as props
 
 
 def rows(cfg, sql):
@@ -180,14 +181,21 @@ def lint(cfg):
     publication, pages = published(cfg)
     incoming = {page['page']: 0 for page in pages}
     findings = []
-    links_by_revision, cited = {}, set()
+    links_by_revision, cited = {}, {}
     if publication:
         for link in relationships(cfg, publication, 'page_links', 'target'):
             links_by_revision.setdefault(link['page_revision'], []).append(link)
         for citation in relationships(cfg, publication, 'citations', 'marker'):
-            cited.add(citation['page_revision'])
+            cited.setdefault(citation['page_revision'], set()).add(str(citation['marker']))
     for page in pages:
         links = links_by_revision.get(page['id'], [])
+        properties, evidence = props.read(page)
+        property_targets = {target for key, values in properties.items() if key in props.RELATIONSHIPS for target in values}
+        links = links + [{'target': target} for target in sorted(property_targets - {link['target'] for link in links})]
+        for key, markers in evidence.items():
+            for marker in markers:
+                if marker not in cited.get(page['id'], set()):
+                    findings.append({'page': page['slug'], 'kind': 'missing-property-citation', 'property': key, 'marker': marker})
         for link in links:
             if link['target'] not in incoming:
                 findings.append({'page': page['slug'], 'kind': 'broken-link', 'target': link['target']})

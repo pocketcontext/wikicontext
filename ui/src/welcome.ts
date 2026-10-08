@@ -31,6 +31,7 @@ function identity(page: PageSummary): string {
 // These are navigation hints, not authoritative metadata. Unknown subjects stay
 // visible in Other knowledge, and every selected publication page appears once.
 export function classifyWelcomePage(page: PageSummary): WelcomeTopicId {
+  if (["resource", "credential", "deployment"].includes(String(page.properties?.catalog_type))) return "platform-security";
   const value = identity(page);
   if (/\b(handoff|handoffs|history|historical|changelog|release|releases|retrospective)\b/.test(value)) return "handoffs-history";
   if (/\b(meeting|meetings|transcript|transcripts|minutes|interview|interviews|source|note|notes)\b/.test(value)) return "meetings-notes";

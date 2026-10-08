@@ -98,7 +98,9 @@ export async function query<T>(sql: string): Promise<T[]> {
     return result.rows.map(
       (row) =>
         Object.fromEntries(
-          result.columns.map((column, index) => [column, row[index]]),
+          result.columns.map((column, index) => [column,
+            ["properties", "property_evidence"].includes(column) && typeof row[index] === "string"
+              ? JSON.parse(row[index] as string) : row[index]]),
         ) as T,
     );
   } catch (error) {
@@ -134,7 +136,7 @@ async function allRows<T>(sql: string, initialSize = 100): Promise<T[]> {
   }
 }
 
-const summary = "r.id, r.page, p.slug, p.kind, r.title, r.summary";
+const summary = "r.id, r.page, p.slug, p.kind, r.title, r.summary, r.properties";
 function published(publicationId: string): string {
   // Expand only the selected immutable manifest, rather than testing every page
   // identity against it. Never download the manifest or select a revision by age.
@@ -338,7 +340,7 @@ export async function getPage(
   if (!(await validatePublication(publicationId))) return null;
   const page = (
     await query<PageSummary & { body: string }>(
-      `SELECT ${summary}, r.body ${published(publicationId)} AND p.slug=${literal(slug)} LIMIT 1`,
+      `SELECT ${summary}, r.body, r.property_evidence ${published(publicationId)} AND p.slug=${literal(slug)} LIMIT 1`,
     )
   )[0];
   if (!page) return null;
@@ -463,14 +465,21 @@ export async function watchPublications(
   await realtimeCleanup;
   if (generation !== sessionGeneration || !pb.authStore.isValid) return () => {};
   const notify = () => { if (generation === sessionGeneration) callback(); };
+  let subscribed = false;
   const unsubscribeConnected = await pb.realtime.subscribe(
     "PB_CONNECT",
-    notify,
+    // Initial connection is reconciled after subscription below; avoid a third
+    // full page read before the collection subscription is active.
+    () => { if (subscribed) notify(); },
   );
   try {
     const unsubscribePublications = await pb
       .collection("publications")
       .subscribe("*", notify);
+    subscribed = true;
+    // Reconcile publications committed after the initial read but before this
+    // subscription became active; no realtime event is guaranteed for that gap.
+    notify();
     return () => {
       void unsubscribePublications().catch(() => {});
       void unsubscribeConnected().catch(() => {});

@@ -94,3 +94,59 @@ and plain excerpt. Lower scores rank first. Follow citations through the returne
 revision before treating a claim as evidence. Search HTTP 409 exits with code 4:
 discard previous result pages and restart without the old generation. A historical
 publication keeps its membership, but scores can change as the index grows.
+
+## Resource properties
+
+Use returned IDs in place of these illustrative placeholders. This stages a new
+resource revision; create its citation and publish only after evidence review.
+
+```sh
+wikicontext create page_revisions - <<'JSON'
+{
+  "run": "RUN_ID_________",
+  "page": "PAGE_ID________",
+  "base_revision": "",
+  "title": "Synthetic evidence bucket",
+  "summary": "Private storage for synthetic evidence.",
+  "body": "The provider inventory lists this bucket.[^1] Accountable ownership remains [needs verification].",
+  "properties": {
+    "catalog_type": "resource",
+    "provider": "cloudflare",
+    "exact_name": "synthetic-evidence",
+    "accountable_owner": null,
+    "provider_status": "observed",
+    "provider_observed_at": "2026-10-08",
+    "deployment_profiles": ["DEPLOY_PAGE_ID_1"]
+  },
+  "property_evidence": {"exact_name": ["1"], "provider_status": ["1"], "provider_observed_at": ["1"]}
+}
+JSON
+wikicontext create citations '{"page_revision":"REVISION_ID____","passage":"PASSAGE_ID_____","marker":"1"}'
+```
+
+Create the matching relationship record before publication:
+
+```sh
+wikicontext create page_links '{"page_revision":"REVISION_ID____","target":"DEPLOY_PAGE_ID_1"}'
+```
+
+The deployment target must exist in the resulting publication. Query resource
+pages missing an owner at an explicitly selected publication (replace sequence 1):
+
+```sql
+SELECT p.id, p.slug, r.id AS revision_id, r.title,
+       json_extract(r.properties, '$.provider') AS provider,
+       json_extract(r.properties, '$.provider_observed_at') AS provider_observed_at
+FROM publications AS pub
+JOIN json_each(pub.manifest) AS selected
+JOIN pages AS p ON p.id = selected.key
+JOIN page_revisions AS r ON r.id = selected.value AND r.page = p.id
+WHERE pub.sequence = 1 AND r.archived = false
+  AND json_extract(r.properties, '$.catalog_type') = 'resource'
+  AND (json_extract(r.properties, '$.accountable_owner') IS NULL
+       OR json_extract(r.properties, '$.accountable_owner') = '')
+ORDER BY p.id LIMIT 100;
+```
+
+Page with `p.id > 'LAST_PAGE_ID'` using the same sequence until complete. Retrieve
+`r.property_evidence`, the cited passages and page body before reporting a claim.

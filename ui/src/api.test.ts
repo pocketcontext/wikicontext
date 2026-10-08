@@ -7,6 +7,7 @@ import {
   query,
   refreshSession,
   searchPages,
+  watchPublications,
   TruncatedQueryError,
 } from "./api";
 
@@ -33,6 +34,34 @@ afterEach(() => {
 });
 
 describe("published knowledge reads", () => {
+  it("reconciles a publication committed between the initial read and subscription activation", async () => {
+    vi.spyOn(pb.authStore, "isValid", "get").mockReturnValue(true);
+    let connected!: () => void;
+    vi.spyOn(pb.realtime, "subscribe").mockImplementation(async (_topic, callback) => { connected = () => callback({} as never); return async () => {}; });
+    let activate!: (unsubscribe: () => Promise<void>) => void;
+    const subscribe = vi.spyOn(pb.collection("publications"), "subscribe").mockImplementation(() => new Promise(resolve => { activate = resolve; }));
+    let committedPublication = "initial";
+    const observed = [committedPublication];
+    const reconcile = vi.fn(() => { observed.push(committedPublication); });
+    const pending = watchPublications(reconcile);
+    await vi.waitFor(() => expect(subscribe).toHaveBeenCalledTimes(1));
+    committedPublication = "published-in-subscription-gap";
+    connected(); // Initial connection alone must not start a redundant full read.
+    expect(reconcile).not.toHaveBeenCalled();
+    activate(async () => {});
+    const unsubscribe = await pending;
+    expect(observed).toEqual(["initial", "published-in-subscription-gap"]);
+    expect(reconcile).toHaveBeenCalledTimes(1);
+    committedPublication = "published-while-disconnected";
+    connected();
+    expect(observed.at(-1)).toBe("published-while-disconnected");
+    expect(reconcile).toHaveBeenCalledTimes(2);
+    unsubscribe();
+  });
+  it("decodes SQL JSON properties and property evidence without changing scalar strings", async () => {
+    vi.spyOn(pb, "send").mockResolvedValue(response([{ properties: '{"catalog_type":"resource","accountable_owner":null}', property_evidence: '{"catalog_type":["1"]}', title: '{not JSON}' }]));
+    await expect(query("SELECT synthetic")).resolves.toEqual([{ properties: { catalog_type: "resource", accountable_owner: null }, property_evidence: { catalog_type: ["1"] }, title: "{not JSON}" }]);
+  });
   it.each([
     { manifest_type: "array", total: 0, unique_keys: 0, invalid: 0 },
     { manifest_type: "object", total: 2, unique_keys: 1, invalid: 0 },

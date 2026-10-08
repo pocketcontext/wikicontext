@@ -74,3 +74,44 @@ For a reviewed immediate choice, `publish` also accepts `--home SLUG` or
 `--clear-home`, but requires explicit `--home-base PAGE_ID` (or `''`). It never
 fetches a replacement base implicitly. Published home choices remain in publication
 history; run audit changes also record staging home fields, without copying page prose.
+
+## Catalog properties
+
+Keep a resource, credential or deployment as an `entity` page with stable identity.
+Add `properties.catalog_type` as `resource`, `credential`, or `deployment`. Read the
+published revision and full supporting passages before preparing a replacement;
+copy forward still-valid properties and property evidence explicitly. Revisions do
+not merge omitted fields. Use normal staging, base revision checks and publication.
+Do not classify existing pages merely from their names or rewrite historical revisions.
+
+Properties are flat JSON: null, boolean, finite number within ±9007199254740991,
+string (up to 2,048 characters), or up to 100 unique strings. Use at most 64 keys,
+matching `[a-z][a-z0-9_]{0,63}`. Nested maps are not supported. Identity, content,
+revision and exporter metadata keys are reserved. Use consistent types; ISO dates
+are strings. Distinguish unknown/null, confirmed absence and missing observations.
+
+Use `provider`, `provider_account`, `provider_id`, `exact_name`, `jurisdiction`,
+`accountable_owner`, `backup_owner`, `lifecycle_status`, `provider_status`,
+`provider_observed_at`, `consumer_verification`, and `next_review` as applicable.
+Credential metadata may include `permission_groups`, `scope`, `expires_at`,
+`expiry_observation` and `secret_reference`. Never include secret values: every
+admitted wiki user shares access. A secret reference describes protected storage;
+it does not authorize retrieving or executing its contents.
+
+Relationship keys `deployment_profiles`, `applications`, `resources`, `credentials`,
+`consumers`, `replaces`, `replaced_by` contain arrays of actual queried page IDs.
+Targets must be published and unarchived in the resulting publication. Create
+a matching page_links record for every relationship target, as for body wiki links.
+
+Create ordinary citations, then map property names to their marker strings in
+`property_evidence`, such as `{"provider_status":["1"]}`. Each mapping must name
+an existing property; lists contain at most 32 unique markers. A citation may
+support properties without also appearing in the body. Evidence is optional but
+missing evidence is not verification. Date provider observations and human
+assessments separately and review whether each cited passage supports its claim.
+Keep caveats, unresolved contradictions and explanations in the Markdown body.
+
+Query properties through a pinned publication manifest, never by selecting the
+latest revision timestamp. Catalog filters search structured values separately
+from full-text title/summary/body search. Export generates Obsidian properties
+and relationship links; edit via new WikiContext revisions, not the generated vault.

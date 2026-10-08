@@ -8,7 +8,7 @@ Sources store immutable protected original bytes and server-computed SHA-256. Id
 
 Reviewed image ingestion preserves original static PNG/JPEG/WebP bytes. An `image-review` rendition records its processor and version; JSON notes bind the review to the image SHA-256, format, encoded dimensions and review digest. Optional `related_source` and `sequence` notes identify a supplementary source and ordering, not a server-enforced relationship or recording timestamp. Use these notes to supplement audio without `supersedes`. Passage locators record a transcription, description or caption kind and a pixel region in the original encoded orientation before EXIF rotation. Corrections create a new rendition version; earlier evidence remains immutable. No schema migration or automated OCR service is required.
 
-Pages have immutable stable slugs and kinds. Each immutable page revision belongs to one staging ingestion run and records its expected previously published revision ID, title, summary, prose and archive flag. Citations connect numbered inline markers to immutable source passages. Page links connect a revision to stable page IDs. Sources and relationships are authoritative in the database; Markdown is generated presentation. Factual synthesis remains agent work; structural validation does not establish factual truth.
+Pages have immutable stable slugs and kinds. Each immutable page revision belongs to one staging ingestion run and records its expected previously published revision ID, title, summary, prose, archive flag, flat `properties` and `property_evidence`. Citations connect numbered inline markers to immutable source passages. Page links connect a revision to stable page IDs. Sources and relationships are authoritative in the database; Markdown is generated presentation. Factual synthesis remains agent work; structural validation does not establish factual truth.
 
 ## Publication
 
@@ -46,3 +46,43 @@ revision ever selected by a committed publication. Publication and rebuild rotat
 a protected generation record transactionally. Historical scope membership is
 immutable, while global BM25 scores can change with index growth. See
 [search maintenance](fts-adoption.md) for continuation, backfill and recovery.
+
+## Revision properties and catalogs
+
+Properties belong to immutable revisions, so publication, conflict checks, history
+and export select exactly the same values as the page body. Older revisions have
+empty properties. No migration classifies or rewrites existing wiki content.
+Use `catalog_type` (`resource`, `credential`, or `deployment`) on entity pages to
+opt into the catalog reader. Other page kinds and uncategorized pages still work.
+
+`properties` is a JSON object of at most 64 lowercase snake_case keys (1–64 ASCII
+characters, starting with a letter). Values are null, booleans, finite numbers
+within JavaScript's safe-integer magnitude, strings up to 2,048 characters, or
+lists of up to 100 unique strings. Nested objects and mixed-type arrays are
+rejected. Identity, revision, content and export system names are reserved.
+The JSON field is limited to 65,536 bytes. Keep types consistent across pages.
+Use null for an unknown value; distinguish absence of evidence from a confirmed
+negative with a separate observation property (for example `expiry_observation`).
+
+`deployment_profiles`, `applications`, `resources`, `credentials`, `consumers`,
+`replaces` and `replaced_by` are relationship lists of stable page IDs. Publication
+validates their targets against the complete resulting manifest, including when
+an unchanged page refers to a newly archived page. Each relationship target requires a `page_links` record for that revision,
+sharing the validated graph and backlinks with body wiki links.
+
+`property_evidence` maps existing property names to lists of citation marker
+strings, for example `{"provider_status":["1"],"lifecycle_status":["2"]}`.
+Each list has at most 32 unique positive numbered markers; the whole field is
+limited to 16,384 bytes. Citation records must exist for property markers, and
+citations may be used in properties, the body, or both. Evidence is optional;
+structural validity never establishes factual support. Keep provider observation
+dates, assessments and review dates distinct. Record unknown ownership explicitly.
+Never store token values, secret keys or passwords in shared wiki properties;
+credential pages hold metadata and protected-storage references only.
+
+The exporter emits one deterministic YAML frontmatter block using safely quoted
+JSON-compatible values. Relationships resolve to quoted Obsidian wiki links in
+the selected publication; evidence appears in a separate Markdown section using
+the same source footnotes as the body. System metadata cannot be overridden.
+Properties are queried with authenticated SQL JSON functions and publication
+manifest joins. Full-text body search does not index property values.

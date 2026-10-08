@@ -20,11 +20,17 @@ function publish(app,run){
   const body=r.getString('body');
   if(/^\[\^\d+\]:/m.test(body))invalid('Footnote definitions are rendered from citations');
   const citations=rows(app,'citations','page_revision = {:id}',{id:r.id});
-  const markers=new Set([...body.matchAll(/\[\^(\d+)\]/g)].map(m=>m[1]));
+  const bodyMarkers=[...body.matchAll(/\[\^(\d+)\]/g)].map(m=>m[1]);
+  const metadata=require(`${__hooks}/properties.js`);
+  const {properties,evidence}=metadata.validate(r);
+  const markers=new Set(bodyMarkers);
+  for(const key of Object.keys(evidence))for(const marker of evidence[key])markers.add(marker);
   for(const marker of markers)if(!citations.some(c=>c.getString('marker')===marker))invalid('Missing citation marker '+marker);
   for(const c of citations)if(!markers.has(c.getString('marker')))invalid('Unused citation');
-  if(!citations.length&&!body.includes('[needs verification]'))invalid('Uncited content must include [needs verification]');
+  if(!bodyMarkers.length&&!body.includes('[needs verification]'))invalid('Uncited content must include [needs verification]');
   const links=rows(app,'page_links','page_revision = {:id}',{id:r.id});
+  const linkedIds=new Set(links.map(l=>l.getString('target')));
+  for(const key of metadata.relationships)for(const id of properties[key]||[])if(!linkedIds.has(id))invalid('Relationship property needs a page_links record: '+key);
   const linked=new Set(links.map(l=>app.findRecordById('pages',l.getString('target')).getString('slug')));
   for(const match of body.matchAll(/\[\[([^\]]+)\]\]/g)){
    const slug=match[1].split('|')[0].split('#')[0];
@@ -61,6 +67,7 @@ function validate(app,r){
  }
  if(t==='pages'&&['index','log'].includes(r.getString('slug')))invalid('Reserved page slug');
  if(t==='page_revisions'){
+  require(`${__hooks}/properties.js`).validate(r);
   draft(app,r.getString('run'));
   const base=r.getString('base_revision');
   if(base&&app.findRecordById('page_revisions',base).getString('page')!==r.getString('page'))invalid('Base revision belongs to another page');

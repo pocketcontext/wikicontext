@@ -75,6 +75,25 @@ def seed(request):
     publish()
     def control(action):
         nonlocal token
+        if action == '/catalog':
+            request('PATCH', '/api/settings', {'rateLimits': {'enabled': False}}, admin)
+            run = create('ingestion_runs', {'key': 'browser-catalog', 'status': 'staging', 'description': 'Synthetic property catalog'})
+            deployment = create('pages', {'slug': 'synthetic-cluster', 'kind': 'entity'})
+            create('page_revisions', {'run': run['id'], 'page': deployment['id'], 'title': 'Synthetic cluster', 'summary': 'Synthetic deployment fixture.',
+                'body': 'Synthetic deployment. [needs verification]', 'properties': {'catalog_type': 'deployment', 'provider': 'Fixture cloud'}})
+            for n in range(51):
+                item = create('pages', {'slug': f'catalog-bucket-{n:02d}', 'kind': 'entity'})
+                revision = create('page_revisions', {'run': run['id'], 'page': item['id'], 'title': f'Catalog bucket {n:02d}', 'summary': 'Synthetic resource fixture.',
+                    'body': 'Synthetic inventory. [needs verification]', 'properties': {'catalog_type': 'resource',
+                        'provider': 'Fixture cloud', 'provider_id': f'synthetic-bucket-{n}', 'deployment_profiles': [deployment['id']],
+                        'lifecycle_status': 'active', 'accountable_owner': None if n == 0 else 'Synthetic operator',
+                        'provider_observed_at': '2026-10-08', 'expires_at': None, 'expiry_observation': 'Not returned'},
+                    'property_evidence': {'provider_observed_at': ['1']}})
+                create('citations', {'page_revision': revision['id'], 'passage': passage['id'], 'marker': '1'})
+                create('page_links', {'page_revision': revision['id'], 'target': deployment['id']})
+            request('PATCH', '/api/collections/ingestion_runs/records/' + run['id'],
+                {'expected_revision': run['revision'], 'status': 'published'}, token)
+            return request('GET', '/api/collections/publications/records?sort=-sequence&perPage=1', token=token)['items'][0]
         if action == '/images':
             def chunk(kind, data):
                 return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))

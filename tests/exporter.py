@@ -85,7 +85,7 @@ class ExportTests(unittest.TestCase):
         schemas = {
             'publications': 'id,run,sequence INTEGER,manifest,created',
             'pages': 'id,slug,kind',
-            'page_revisions': 'id,page,run,title,summary,body,archived INTEGER,created',
+            'page_revisions': 'id,page,run,title,summary,body,archived INTEGER,created,properties,property_evidence',
             'citations': 'id,page_revision,passage,marker,note',
             'page_links': 'id,page_revision,target',
             'passages': 'id,rendition,locator',
@@ -101,7 +101,7 @@ class ExportTests(unittest.TestCase):
         put('publications', ('p'*15, run, 1, json.dumps({pid: rid}), '2026-01-01'))
         put('publications', ('q'*15, 'z'*15, 2, '{}', '2026-01-02'))
         put('pages', (pid, 'example', 'concept'))
-        put('page_revisions', (rid, pid, run, 'Example', 'Summary', 'Evidence [^1].', 0, '2026-01-01'))
+        put('page_revisions', (rid, pid, run, 'Example', 'Summary', 'Evidence [^1].', 0, '2026-01-01', json.dumps({'catalog_type': 'resource', 'resources': [pid], 'accountable_owner': None, 'exact_name': 'yes\n---\ntitle: forged', 'enabled': True}), json.dumps({'exact_name': ['1']})))
         put('citations', ('e'*15, rid, 'f'*15, '1', 'supports example'))
         put('passages', ('f'*15, 'g'*15, 'page 1'))
         put('renditions', ('g'*15, sid))
@@ -123,6 +123,35 @@ class ExportTests(unittest.TestCase):
         self.assertIn(b'\\[bad\\]\\(url\\).txt', files['wiki/example.md'])
         self.assertNotIn(b'2026-01-02', files['wiki/log.md'])
         self.assertEqual(download.call_count, 2)
+        markdown = files['wiki/example.md'].decode()
+        header = markdown.split('---\n', 2)[1]
+        frontmatter = {key: json.loads(value) for key, value in (line.split(': ', 1) for line in header.splitlines())}
+        self.assertEqual(frontmatter['resources'], ['[[example]]'])
+        self.assertIsNone(frontmatter['accountable_owner'])
+        self.assertIs(frontmatter['enabled'], True)
+        self.assertEqual(frontmatter['exact_name'], 'yes\n---\ntitle: forged')
+        self.assertIn('## Property evidence\n\n- exact\\_name: [^1]', markdown)
+        self.assertNotIn('property_evidence', header)
+
+    def test_invalid_properties_rejected(self):
+        from wikicontext_client import properties
+        for value in [{'title': 'override'}, {'nested': {'x': 1}}, {'resources': ['missing']},
+                      {'catalog_type': 'invented'}, {'number': float('nan')}, {'tags': ['a', 'a']}]:
+            with self.subTest(value=value), self.assertRaises(wc.Fail):
+                properties.read({'properties': value})
+        with self.assertRaises(wc.Fail):
+            properties.read({'properties': {'provider': 'cloud'}, 'property_evidence': {'absent': ['1']}})
+        self.assertEqual(properties.read({'properties': 'null', 'property_evidence': None}), ({}, {}))
+
+    def test_frontmatter_unicode_and_scalar_types_round_trip(self):
+        text = 'Storage 🪣 日本語\u0085---\u2028title: forged\u2029\u007f\u0080\ufeff\nnext'
+        for value in (text, [text], None, True, False, 42, 3.5, '2026-10-08', 'yes'):
+            encoded = exp.yaml_value(value)
+            self.assertEqual(json.loads(encoded), value)
+            self.assertEqual(len(encoded.splitlines()), 1)
+            self.assertFalse(any(0x7f <= ord(char) <= 0x9f or ord(char) in (0x2028, 0x2029, 0xfeff) for char in encoded))
+        self.assertIn('🪣', exp.yaml_value(text))
+        self.assertNotIn('\\ud83e', exp.yaml_value(text))
 
     def test_interrupted_export_recovery_preserves_later_edits(self):
         import base64

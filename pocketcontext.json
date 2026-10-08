@@ -75,6 +75,8 @@
       "title",
       "summary",
       "body",
+      "properties",
+      "property_evidence",
       "archived",
       "created_by",
       "updated_by",

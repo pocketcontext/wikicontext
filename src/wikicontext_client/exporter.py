@@ -9,6 +9,7 @@ import tempfile
 import urllib.parse
 import urllib.request
 from . import cli as wc
+from . import properties as props
 
 MANIFEST = '.wikicontext-export.json'
 JOURNAL = '.wikicontext-export-journal.json'
@@ -96,6 +97,16 @@ def download(cfg, source):
     return content
 
 
+def yaml_value(value):
+    """JSON flow values with YAML-sensitive Unicode escaped, preserving emoji."""
+    encoded = json.dumps(value, ensure_ascii=False, allow_nan=False)
+    # YAML treats NEL/line separators differently from JSON and forbids most C1
+    # controls. Avoid surrogate-pair escapes, which YAML need not recombine.
+    return ''.join(f'\\u{ord(char):04x}' if 0x7f <= ord(char) <= 0x9f
+                   or ord(char) in (0x2028, 0x2029, 0xfeff) else char
+                   for char in encoded)
+
+
 def render(cfg, sequence=None):
     cache = {}
     def get(cfg, table, columns, record):
@@ -114,7 +125,7 @@ def render(cfg, sequence=None):
     pages, revisions, sources, files = {}, {}, {}, {}
     for page_id, revision_id in sorted(manifest.items()):
         page = get(cfg, 'pages', 'id,slug,kind', page_id)
-        revision = get(cfg, 'page_revisions', 'id,page,run,title,summary,body,archived,created', revision_id)
+        revision = get(cfg, 'page_revisions', 'id,page,run,title,summary,body,archived,properties,property_evidence,created', revision_id)
         if revision['page'] != page_id or not re.fullmatch('[a-z0-9]+(-[a-z0-9]+)*', page['slug']):
             raise wc.Fail(1, 'Invalid published page identity')
         if revision['archived']:
@@ -125,8 +136,23 @@ def render(cfg, sequence=None):
         citations = rows(cfg, 'citations', 'id,passage,marker,note', 'page_revision = ' + literal(revision['id']))
         links = rows(cfg, 'page_links', 'id,target', 'page_revision = ' + literal(revision['id']))
         frontmatter = {'wikicontext_page': page_id, 'wikicontext_revision': revision['id'], 'publication': publication['sequence'], 'kind': page['kind'], 'title': revision['title']}
-        body = '---\n' + ''.join(k + ': ' + json.dumps(v, ensure_ascii=False) + '\n' for k, v in frontmatter.items()) + '---\n\n'
+        properties, evidence = props.read(revision)
+        for key, value in sorted(properties.items()):
+            if key in props.RELATIONSHIPS:
+                if any(target not in pages for target in value):
+                    raise wc.Fail(1, 'Property relationship is absent from selected publication')
+                value = ['[[' + pages[target]['slug'] + ']]' for target in value]
+            frontmatter[key] = value
+        body = '---\n' + ''.join(k + ': ' + yaml_value(v) + '\n' for k, v in frontmatter.items()) + '---\n\n'
         body += '# ' + plain(revision['title']) + '\n\n## Summary\n\n' + plain(revision['summary']) + '\n\n' + revision['body'].rstrip() + '\n'
+        if evidence:
+            citation_markers = {str(c['marker']) for c in citations}
+            body += '\n## Property evidence\n\n'
+            for key, markers in sorted(evidence.items()):
+                if any(marker not in citation_markers for marker in markers):
+                    raise wc.Fail(1, 'Property evidence citation is absent')
+                if markers:
+                    body += '- ' + plain(key) + ': ' + ' '.join('[^' + marker + ']' for marker in markers) + '\n'
         body += '\n## Sources\n'
         for citation in sorted(citations, key=lambda c: int(c['marker'])):
             passage = get(cfg, 'passages', 'id,rendition,locator', citation['passage'])

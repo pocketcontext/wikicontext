@@ -44,6 +44,17 @@ links with aliases/heading anchors, citation markers and callouts. Raw HTML and
 embedded images are disabled. Obsidian plugins, block embeds, editing and two-way
 vault synchronization are outside this reader's scope.
 
+Published revision properties appear below the page summary, with additional fields
+under All properties. Field evidence opens the existing citation dialog; values
+without citations are labelled accordingly. Relationship links resolve within the
+selected publication. Resources, Credentials and Deployments in the sidebar open
+catalog views with property search, provider/deployment/lifecycle filters, missing
+ownership, sorting and 50-record pagination. Filters and publication selection are
+shareable URL state. Catalog search covers recorded properties and relationship
+names; full-text search continues to cover titles, summaries and page bodies.
+Catalogs use the complete selected publication, update atomically in live mode and
+show cards on mobile. Properties are read-only in the browser.
+
 Frontend source is in `ui/`: React, TypeScript and Vite, with bundled Markdown
 rendering and the PocketBase SDK. Content reads use authenticated SQL; the SDK
 handles ordinary user authentication, protected file tokens and SSE notifications.
@@ -94,6 +105,8 @@ Supported extraction: reviewed PNG/JPEG/WebP images (see below); UTF-8 text/Mark
 
 Pillow is installed automatically with the client package for reviewed image ingestion. Run `wikicontext ingest IMAGE --image-review REVIEW.json` after viewing the original and preparing reviewed evidence. The client verifies and decodes static PNG/JPEG/WebP images, requires matching extensions, limits dimensions to 16,384 pixels per axis and 50 million total pixels, and preserves the exact original bytes. Review JSON must match the original SHA-256 and encoded dimensions before upload. It separates transcription, visual description and captions into region-addressable passages. A changed review requires a new `--version`; identical reviewed input resumes interrupted writes. Related audio source IDs and screenshot sequence are recorded in rendition notes, without replacing the audio. Image ingestion makes no external OCR or vision-service request. See the [review format](skills/wikicontext/references/examples.md#reviewed-image-evidence) and [image workflow](skills/wikicontext/references/workflows.md#images). The reader previews PNG/JPEG/WebP originals on source and passage pages and in citation dialogs, with an enlarged view, actual-size scrolling, retry controls and protected original downloads. Previews clear when the source or signed-in identity changes. Other image formats remain download-only; previews do not add extraction or OCR.
 
+Resource, credential and deployment pages can carry flat typed revision properties, property-specific citation evidence and stable page relationships. Properties share publication history and conflict checks with prose; existing pages remain unclassified until an agent publishes a reviewed revision. See the [property contract](docs/data-model.md#revision-properties-and-catalogs) and [catalog workflow](skills/wikicontext/references/workflows.md#catalog-properties). Store credential metadata and protected-storage references only, never secret values. Obsidian export includes these properties in its single YAML frontmatter block and resolves relationship IDs to wiki links.
+
 The exporter writes `wiki/` and `raw/` under the destination. Numbered source footnotes, wiki-links, page metadata, index and publication log are deterministic. Exports pin one immutable publication; `--sequence N` selects history. An ownership manifest detects local edits/deletions, prevents overwriting unrelated files, and supports interrupted-export recovery. `.obsidian/` remains untouched. Avoid concurrent local editing during export; the exporter lock coordinates exporters, not external editors. Use a fresh destination for initial migration: existing authored wiki files are not silently adopted. Downloaded files cannot be revoked remotely.
 
 See [data model](docs/data-model.md) and [skill workflows](skills/wikicontext/references/workflows.md) for synthesis, idempotency, queries, corrections and publication. Structural lint does not establish semantic correctness. Full-text search indexes published revision title, summary and body; it uses token matching rather than the former arbitrary substring matching. It does not provide vector search or generated answers. Raw SQL queries must explicitly distinguish draft revisions from the published manifest.
@@ -132,6 +145,7 @@ python3 tests/integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/tracing.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/publication_review.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/home.py --binary /absolute/path/to/pinned/pocketcontext
+python3 tests/properties.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/auth.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/realtime_access.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/realtime_publication.py --binary /absolute/path/to/pinned/pocketcontext

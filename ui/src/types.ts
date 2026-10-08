@@ -7,6 +7,9 @@ export interface Publication {
   created: string;
 }
 
+export type PropertyValue = string | number | boolean | null | string[];
+export type Properties = Record<string, PropertyValue>;
+
 export interface PageSummary {
   /** Immutable revision identity. */
   id: string;
@@ -16,6 +19,7 @@ export interface PageSummary {
   kind: string;
   title: string;
   summary: string;
+  properties?: Properties;
 }
 
 export interface Source {
@@ -45,6 +49,7 @@ export interface Citation {
 
 export interface PageDetail extends PageSummary {
   body: string;
+  property_evidence?: Record<string, string[]>;
   citations: Citation[];
   backlinks: PageSummary[];
   links: PageSummary[];

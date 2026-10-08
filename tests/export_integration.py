@@ -38,10 +38,12 @@ def main():
                 return request('POST', wc.records(table), body, token)
             def run(key):
                 return create('ingestion_runs', {'key': key, 'status': 'staging', 'description': 'Synthetic ' + key, 'sources': [source['id']]})
-            def revision(run, page, base='', archived=False):
+            def revision(run, page, base='', archived=False, owner=None):
                 record = create('page_revisions', {'run': run['id'], 'page': page['id'], 'base_revision': base,
                     'title': 'Synthetic observatory', 'summary': 'Synthetic sourced fact.',
-                    'body': 'The observatory opened in 2026.[^1]', 'archived': archived})
+                    'body': 'The observatory opened in 2026.[^1]', 'archived': archived,
+                    'properties': {'catalog_type': 'resource', 'accountable_owner': owner},
+                    'property_evidence': {'catalog_type': ['1']}})
                 create('citations', {'page_revision': record['id'], 'passage': passage['id'], 'marker': '1', 'note': 'Opening date.'})
                 return record
             def publish(run):
@@ -67,7 +69,7 @@ def main():
             assert md.read_bytes() == original_render
             attachment.write_bytes(original)
             # New publication does not alter historical export or its recorded sequence.
-            second = run('second'); rev2 = revision(second, page, rev1['id']); publish(second)
+            second = run('second'); rev2 = revision(second, page, rev1['id'], owner='Synthetic owner'); publish(second)
             exporter.export(cfg, destination, sequence=1)
             assert md.read_bytes() == original_render
             assert json.loads((destination / exporter.MANIFEST).read_text())['sequence'] == 1
@@ -77,6 +79,9 @@ def main():
             assert result.returncode == 0, result.stderr
             assert json.loads(result.stdout)['sequence'] == 2
             assert rev2['id'] in md.read_text()
+            assert 'accountable_owner: "Synthetic owner"' in md.read_text()
+            assert b'accountable_owner: null' in original_render
+            assert b'## Property evidence' in original_render
             (destination / '.obsidian').mkdir()
             (destination / '.obsidian/app.json').write_text('{}')
             (destination / 'wiki/personal.md').write_text('Local note')

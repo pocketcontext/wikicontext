@@ -253,6 +253,14 @@
         {
           "name": "updated_by",
           "type": "TEXT"
+        },
+        {
+          "name": "properties",
+          "type": "JSON"
+        },
+        {
+          "name": "property_evidence",
+          "type": "JSON"
         }
       ]
     },

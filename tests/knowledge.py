@@ -146,6 +146,22 @@ class Knowledge(unittest.TestCase):
         self.assertEqual(len([r for r in result['findings'] if r['kind'] == 'needs-verification']), 119)
         self.assertLess(len(self.calls), 20)
 
+    def test_property_relationships_and_evidence(self):
+        self.fixture(2)
+        self.db.execute('ALTER TABLE page_revisions ADD COLUMN properties TEXT')
+        self.db.execute('ALTER TABLE page_revisions ADD COLUMN property_evidence TEXT')
+        self.db.execute('UPDATE page_revisions SET properties=?,property_evidence=? WHERE id=?',
+                        (json.dumps({'resources': [ident(2)], 'provider': 'synthetic'}),
+                         json.dumps({'provider': ['1', '2']}), ident(10001)))
+        self.db.execute('INSERT INTO citations VALUES (?,?,1)', (ident(30001), ident(10001)))
+        findings = knowledge.lint({})['findings']
+        self.assertNotIn({'page': 'page-0001', 'kind': 'orphan'}, findings)
+        self.assertIn({'page': 'page-0000', 'kind': 'missing-property-citation',
+                       'property': 'provider', 'marker': '2'}, findings)
+        self.db.execute('UPDATE page_revisions SET archived=1 WHERE id=?', (ident(10002),))
+        self.assertIn({'page': 'page-0000', 'kind': 'broken-link', 'target': ident(2)},
+                      knowledge.lint({})['findings'])
+
     def test_new_publication_during_reads_does_not_change_pin(self):
         self.fixture(2)
         query = self.query

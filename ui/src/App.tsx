@@ -5,6 +5,9 @@ import {
   useState,
   type FormEvent,
 } from "react";
+import Catalog, { catalogHref, catalogTypes, type CatalogState, type CatalogType } from "./Catalog";
+import PropertiesPanel from "./Properties";
+import "./catalog.css";
 import ImagePreview from "./ImagePreview";
 import EvidenceBrowser, { evidenceHref } from "./EvidenceBrowser";
 import { api, pb, sessionGeneration } from "./api";
@@ -32,8 +35,10 @@ function route() {
   const [path, query = ""] = location.hash.replace(/^#\/?/, "").split("?");
   const params = new URLSearchParams(query);
   return {
-    slug: path === "welcome" || /^(sources|passages)\//.test(path) ? "" : safeDecode(path.replace(/^page\//, "")),
+    slug: path.startsWith("catalog/") || path === "welcome" || /^(sources|passages)\//.test(path) ? "" : safeDecode(path.replace(/^page\//, "")),
     welcome: path === "welcome",
+    catalog: path.startsWith("catalog/"),
+    catalogState: { type: catalogTypes.includes(path.split("/")[1] as CatalogType) ? path.split("/")[1] as CatalogType : "resource", query: params.get("q") || "", provider: params.get("provider") || "", deployment: params.get("deployment") || "", lifecycle: params.get("lifecycle") || "", missingOwner: params.get("missingOwner") === "true", sort: params.get("sort") || "title", offset: Math.min(100000, Math.max(0, parseInt(params.get("offset") || "0", 10) || 0)) } as CatalogState,
     topic: params.get("topic") || "",
     collection: path.startsWith("sources/") ? "sources" as const : path.startsWith("passages/") ? "passages" as const : "pages" as const,
     record: /^(sources|passages)\//.test(path) ? safeDecode(path.split("/")[1] || "") : "",
@@ -100,7 +105,7 @@ function Reader() {
       const next = route();
       const previous = routeSelection.current;
       if (
-        next.slug !== previous.slug || next.welcome !== previous.welcome ||
+        next.slug !== previous.slug || next.welcome !== previous.welcome || next.catalog !== previous.catalog ||
         next.publication !== previous.publication
       ) {
         generation.current++;
@@ -147,7 +152,7 @@ function Reader() {
           !event.altKey)
       ) {
         event.preventDefault();
-        const welcomeSearch = document.querySelector<HTMLInputElement>('.welcome-page input[type="search"]');
+        const welcomeSearch = document.querySelector<HTMLInputElement>('.welcome-page input[type="search"], .catalog-page input[type="search"]');
         if (welcomeSearch) { setMenu(false); welcomeSearch.focus(); return; }
         setMenu(true);
         requestAnimationFrame(() =>
@@ -197,7 +202,7 @@ function Reader() {
         return;
       }
       const pages = await api.listPages(publication.id);
-      const slug = current.welcome ? undefined : current.slug || homePageSlug(publication, pages);
+      const slug = current.welcome || current.catalog ? undefined : current.slug || homePageSlug(publication, pages);
       const page = slug ? await api.getPage(publication.id, slug) : null;
       if (own === generation.current) {
         setPublications(history);
@@ -214,7 +219,7 @@ function Reader() {
     } finally {
       if (own === generation.current) setBusy(false);
     }
-  }, [current.slug, current.welcome, current.publication]);
+  }, [current.slug, current.welcome, current.catalog, current.publication]);
   useEffect(() => {
     if (!authenticated) return;
     void load();
@@ -256,7 +261,7 @@ function Reader() {
   }, [authenticated, load]);
   useEffect(() => {
     if (!(current.welcome && current.topic)) reader.current?.scrollTo?.(0, 0);
-  }, [current.slug, current.welcome, current.publication, current.collection, current.record, current.topic]);
+  }, [current.slug, current.welcome, current.publication, current.collection, current.record, current.topic, current.catalog, current.catalogState.type, current.offset]);
   useEffect(() => {
     if (current.heading && snapshot)
       document
@@ -295,7 +300,9 @@ function Reader() {
   };
   const navigatePublication = (id: string) => {
     location.hash = (
-      current.collection !== "pages"
+      current.catalog
+        ? catalogHref(current.catalogState, id === "live" ? undefined : id)
+        : current.collection !== "pages"
         ? evidenceHref(current.collection, current.record, current.query, id === "live" ? "" : id, current.offset)
         : current.welcome && !current.query
         ? `#/welcome${id === "live" ? "" : `?publication=${encodeURIComponent(id)}`}`
@@ -354,14 +361,14 @@ function Reader() {
       : null;
   const matchingPublication = !pinned || snapshot?.publication.id === pinned;
   const pages = matchingPublication ? snapshot?.pages || [] : [];
-  const searching = current.collection === "pages" && Boolean(current.query.trim() && !current.slug);
+  const searching = !current.catalog && current.collection === "pages" && Boolean(current.query.trim() && !current.slug);
   const topicGroups = groupWelcomePages(pages).filter(group => group.pages.length);
   const welcomeHref = (topic: string) => {
     const params = new URLSearchParams({ topic });
     if (pinned) params.set("publication", pinned);
     return `#/welcome?${params}`;
   };
-  const welcoming = current.collection === "pages" && !searching && !current.slug &&
+  const welcoming = !current.catalog && current.collection === "pages" && !searching && !current.slug &&
     (current.welcome || (matchingPublication && !snapshot?.publication.home));
   return (
     <div className="workspace">
@@ -424,6 +431,7 @@ function Reader() {
         </div>
         <div ref={setEvidenceNavigation} className="evidence-navigation" hidden={current.collection === "pages"} />
         <div className="page-navigation" hidden={current.collection !== "pages"}>
+          <nav className="catalog-navigation" aria-label="Catalog navigation">{catalogTypes.map(type => <a key={type} href={catalogHref({ type }, pinned)} aria-current={current.catalog && current.catalogState.type === type ? "page" : undefined}>{type === "resource" ? "Resources" : type === "credential" ? "Credentials" : "Deployments"}</a>)}</nav>
           <nav className="topic-navigation" aria-label="Topics">
             {topicGroups.map(group => <a key={group.id} href={welcomeHref(group.id)} aria-current={welcoming && current.topic === group.id ? "page" : undefined}>
               <span>{group.title}</span><span className="topic-count">{group.pages.length}</span>
@@ -476,7 +484,7 @@ function Reader() {
           <div className="breadcrumb">
             {current.collection === "pages" ? "Wiki" : current.collection === "sources" ? "Sources" : "Passages"} <span>/</span>{" "}
             <strong>
-              {current.collection !== "pages" ? evidenceTitle || (current.record ? "Record details" : "Browse evidence") : searching ? "Search" : welcoming ? "Welcome" : page?.title || "Your knowledge"}
+              {current.collection !== "pages" ? evidenceTitle || (current.record ? "Record details" : "Browse evidence") : current.catalog ? "Catalog" : searching ? "Search" : welcoming ? "Welcome" : page?.title || "Your knowledge"}
             </strong>
           </div>
           <div className="topbar-actions">
@@ -538,11 +546,11 @@ function Reader() {
             </button>
           </div>
         )}
-        <div className={`reading-layout ${welcoming ? "welcome-layout" : ""}`}>
+        <div className={`reading-layout ${welcoming ? "welcome-layout" : current.catalog ? "catalog-layout" : ""}`}>
           <main
             id="reader"
             ref={reader}
-            className={`reader ${welcoming ? "welcome-reader" : ""}`}
+            className={`reader ${welcoming ? "welcome-reader" : current.catalog ? "catalog-reader" : ""}`}
             tabIndex={-1}
             aria-busy={busy}
           >
@@ -555,8 +563,9 @@ function Reader() {
               }
               epoch={searchEpoch}
             />
+            {current.catalog && matchingPublication && (!busy || snapshot) && <Catalog pages={pages} state={current.catalogState} publication={pinned} onNavigate={href => { history.replaceState(null, "", href); const next = route(); routeSelection.current = next; setCurrent(next); setSearch(next.query); }} />}
             {welcoming && matchingPublication && (!busy || snapshot) && <WelcomePage key={pinned || "live"} pages={pages} publication={snapshot?.publication || null} pinned={pinned} topic={current.topic} onTopicChange={topic => { location.hash = welcomeHref(topic); }} onSearch={query => { location.hash = searchHref(query, pinned); }} />}
-            {current.collection === "pages" && !searching && !welcoming &&
+            {current.collection === "pages" && !current.catalog && !searching && !welcoming &&
               (page ? (
                 <article>
                   {current.query && current.slug && (
@@ -580,6 +589,7 @@ function Reader() {
                   {page.summary && (
                     <p className="page-summary">{page.summary}</p>
                   )}
+                  <PropertiesPanel key={page.id} page={page} pages={pages} publication={pinned} onCitation={openCitation} />
                   <div className="page-rule" />
                   <div className="markdown">
                     <Markdown
@@ -640,7 +650,7 @@ function Reader() {
           <aside
             className="context-panel"
             aria-label="Page context"
-            hidden={welcoming || searching || current.collection !== "pages"}
+            hidden={current.catalog || welcoming || searching || current.collection !== "pages"}
           >
             <div className="context-title">ON THIS PAGE</div>
             {outline.length ? (

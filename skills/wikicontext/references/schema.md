@@ -9,7 +9,7 @@ Use `wikicontext schema` for live SQL columns and `wikicontext check` for differ
 | passages | `rendition`, positive `ordinal`, `locator`, `body` (30,000 characters maximum). Immutable, unique rendition/ordinal. |
 | ingestion_runs | Unique `key`, `status` (`staging`, `published`, `cancelled`), `description`, `sources` (up to 100), `issue`, optional `home` page ID, `home_base` expected previous home page ID, and `clear_home`. Home and clear are mutually exclusive; empty home with clear false carries the previous choice. New runs must be staging. Only staging runs can change. |
 | pages | Stable `slug`, `kind` (`summary`, `concept`, `entity`, `transcript`, `answer`, `legacy`). Immutable identities; slug uses lowercase ASCII words and hyphens. `index` and `log` are reserved. |
-| page_revisions | `run`, `page`, `base_revision`, `title`, `summary`, `body`, `archived`. Immutable. One revision per page per run. Base is the published revision ID, empty for a new page. |
+| page_revisions | `run`, `page`, `base_revision`, `title`, `summary`, `body`, `archived`, flat JSON `properties`, JSON `property_evidence`. Immutable. One revision per page per run. Base is the published revision ID, empty for a new page. |
 | citations | `page_revision`, `passage`, numbered string `marker`, optional `note`. Immutable, unique revision/marker. |
 | page_links | `page_revision`, `target` page identity. Immutable, unique pair. |
 | publications | Server-owned increasing `sequence`, `run`, immutable `manifest` mapping page IDs to published revision IDs, optional `home` page ID, `created`. |
@@ -24,3 +24,8 @@ Publishing changes the run status through the records API. In one transaction th
 Body markers use `[^1]`. Create corresponding citation records; do not embed footnote definitions in the body. The exporter renders definitions. Body `[[target-slug]]` links require page_links records. Link targets must be present and unarchived in the resulting publication. Uncited prose must explicitly contain `[needs verification]`; this structural allowance does not establish factual accuracy.
 
 The authenticated search endpoint is separate from SQL. Index `pages` takes a required publication ID as `scope`; manifest values select revisions before pagination. Its generation changes on publication and rebuild. FTS and shadow tables are never SQL-readable. Search results may be incomplete when `hasMore`/`truncated` is true; paginate using the same scope and generation.
+
+Revision properties follow the [catalog workflow](workflows.md#catalog-properties).
+Relationship properties contain stable page IDs and are checked against the resulting
+publication and require matching page_links records for each target. Citation markers may be
+used in the body or `property_evidence` (or both). JSON SQL values may need decoding.
