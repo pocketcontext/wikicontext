@@ -1,11 +1,11 @@
 ---
 name: wikicontext
-description: Ingest sources into WikiContext, synthesize and publish cited knowledge pages, answer questions from its authenticated SQL evidence, and export a reproducible Obsidian vault. Use for WikiContext knowledge operations, including text, PDF, reviewed images and authorized Groq audio ingestion; Markdown exports are presentation only.
+description: Ingest sources into WikiContext, synthesize and publish cited knowledge pages, answer questions from its authenticated SQL evidence, maintain authoritative repository files and their GitHub destinations, and export a reproducible Obsidian vault. Use for WikiContext knowledge operations, including text, PDF, reviewed images and authorized Groq audio ingestion; Markdown exports are presentation only.
 ---
 
 # WikiContext
 
-WikiContext is authoritative for originals, extracted passages, page revisions, citations, links and publication history. Generated Markdown is an Obsidian presentation. Never answer from the generated vault, ingest its local edits implicitly, or write knowledge directly into it.
+WikiContext is authoritative for originals, extracted passages, page revisions, citations, links and publication history. Generated Obsidian Markdown and GitHub file copies are presentations of published wiki content. Never answer from the generated vault, ingest its local edits implicitly, or write knowledge directly into it.
 
 Resolve `wikicontext` relative to this skill directory. The portable client requires Python 3.11+ and uv; its package includes Pillow for reviewed image ingestion. Read [schema](references/schema.md), [workflows](references/workflows.md), and [examples](references/examples.md) before domain operations. The live authenticated schema takes precedence over static references.
 
@@ -46,3 +46,7 @@ When the user requests tracing, follow [request tracing](references/tracing.md).
 ## Browser links
 
 When reporting a page or evidence record, include a reader link using the configured `WIKICONTEXT_URL` origin (remove its trailing slash). Live pages use `/#/page/<slug>`; fixed historical views append `?publication=<publication-id>`. Sources use `/#/sources/<source-id>` and passages use `/#/passages/<passage-id>`. Encode path components. Use actual queried identities, not inferred IDs. Source evidence is immutable; a live page can change with later publication. Links require the viewer's own authentication and never grant access. Link to the reader, never a protected file URL containing a temporary token.
+
+## Repository files
+
+For README, LICENSE, COPYRIGHT, NOTICE and shared contribution files, follow [repository files](references/workflows.md#repository-files). Maintain one authoritative document per intentionally shared content and one destination per GitHub repository/branch/path. Export a pinned publication to a new staging file with `export-repository-file`; review and update GitHub only within the user’s requested scope. Independent edits require reconciliation into WikiContext. Never infer copyright holders, advance years automatically or silently apply license changes.

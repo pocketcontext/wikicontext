@@ -10,7 +10,7 @@ from unittest.mock import patch
 from integration import ROOT, server, credentials
 import search_integration
 from search_integration import Fixture, running
-from wikicontext_client import ingest
+from wikicontext_client import ingest, repository_files, cli
 
 
 def main():
@@ -69,7 +69,7 @@ def main():
         def cite(rev):
             return create('citations', {'page_revision': rev['id'], 'passage': passage, 'marker': '1'})
         source = Path(folder)/'evidence.txt'
-        source.write_text('Synthetic provider observation.')
+        source.write_bytes(b'Synthetic provider observation.\r\nCopyright synthetic example.\r\n')
         with patch.dict(os.environ, {'XDG_CACHE_HOME': folder}):
             ingest.ingest({'url': request.base_url, 'email': 'agent@example.com', 'password': 'SyntheticUserPassword123!'}, source)
         passage = query('SELECT id FROM passages LIMIT 1')[0]['id']
@@ -161,6 +161,126 @@ def main():
         revision(staged, group, group_rev['id'], {'catalog_type': 'group', 'members': []})
         publish(staged)
         assert json.loads(query("SELECT properties FROM page_revisions WHERE id='%s'" % group_rev['id'])[0]['properties'])['members'] == [person['id']]
+        # One immutable document can feed multiple destinations; sync is independent.
+        document = create('pages', {'slug': 'shared-copyright', 'kind': 'entity'})
+        destination = create('pages', {'slug': 'copyright-repo-a', 'kind': 'entity'})
+        destination_b = create('pages', {'slug': 'copyright-repo-b', 'kind': 'entity'})
+        observation = create('pages', {'slug': 'copyright-sync-a', 'kind': 'entity'})
+        source_id = query('SELECT id FROM sources LIMIT 1')[0]['id']
+        document_props = {'catalog_type': 'repository_document', 'document_type': 'copyright', 'output_mode': 'exact_copy', 'source_id': source_id}
+        destination_props = {'catalog_type': 'repository_destination', 'documents': [document['id']], 'github_repository': 'synthetic/repo-a', 'github_branch': 'main', 'github_path': 'COPYRIGHT'}
+        staged = run('repository-files')
+        doc_rev = revision(staged, document, properties=document_props)
+        dest_rev = revision(staged, destination, properties=destination_props)
+        dest_b_rev = revision(staged, destination_b, properties={**destination_props, 'github_repository': 'synthetic/repo-b'})
+        link(dest_rev, document)
+        link(dest_b_rev, document)
+        publish(staged)
+        export_sequence = query('SELECT sequence FROM publications ORDER BY sequence DESC LIMIT 1')[0]['sequence']
+        cfg = {'url': request.base_url, 'email': 'agent@example.com', 'password': 'SyntheticUserPassword123!'}
+        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder}):
+            output = Path(folder)/'COPYRIGHT.review'
+            receipt = repository_files.export(cfg, destination['id'], output, export_sequence)
+            assert output.read_bytes() == source.read_bytes()
+            assert receipt['document_revision'] == doc_rev['id'] and receipt['destination_revision'] == dest_rev['id']
+            try:
+                repository_files.export(cfg, destination['id'], output, export_sequence)
+                raise AssertionError('Overwrote existing output')
+            except cli.Fail:
+                assert output.read_bytes() == source.read_bytes()
+            try:
+                repository_files.export(cfg, 'z'*15, Path(folder)/'absent', export_sequence)
+                raise AssertionError('Accepted absent destination')
+            except cli.Fail:
+                assert not (Path(folder)/'absent').exists()
+        sync_props = {'catalog_type': 'repository_sync', 'destinations': [destination['id']], 'synced_destination_revision': dest_rev['id'], 'synced_document_revision': doc_rev['id'], 'rendered_sha256': query('SELECT sha256 FROM sources LIMIT 1')[0]['sha256'], 'github_commit': 'b'*40, 'checked_at': '2026-10-10T00:00:00Z', 'sync_status': 'current'}
+        staged = run('repository-observation')
+        sync_rev = revision(staged, observation, properties=sync_props)
+        link(sync_rev, destination)
+        publish(staged)
+        assert json.loads(query('SELECT manifest FROM publications ORDER BY sequence DESC LIMIT 1')[0]['manifest'])[document['id']] == doc_rev['id']
+        for index, malformed in enumerate([
+            {**document_props, 'source_id': 'bad'},
+            {**document_props, 'output_mode': 'template'},
+            {**destination_props, 'documents': []},
+            *[{**destination_props, 'github_path': path} for path in ['/COPYRIGHT', '../COPYRIGHT', '.git/config', 'a//b', 'a/./b', 'a\\b']],
+            *[{**destination_props, 'github_branch': branch} for branch in ['../main', 'a.lock', 'a..b', '@{x}', 'a b']],
+            {**sync_props, 'checked_at': '2026-02-30T00:00:00Z'},
+            {**sync_props, 'github_commit': 'abc'},
+        ]):
+            staged = run('invalid-repository-metadata-' + str(index))
+            revision(staged, document, properties=malformed, expected=400)
+        staged = run('nonexistent-original-source')
+        revision(staged, document, doc_rev['id'], {**document_props, 'source_id': 'zzzzzzzzzzzzzzz'}, expected=404)
+        publications_before_duplicate = query('SELECT id,manifest FROM publications ORDER BY sequence')
+        staged = run('duplicate-repository-destination')
+        duplicate = revision(staged, destination_b, dest_b_rev['id'], {**destination_props, 'github_repository': 'Synthetic/Repo-A'})
+        link(duplicate, document)
+        publish(staged, 400)
+        assert query('SELECT id,manifest FROM publications ORDER BY sequence') == publications_before_duplicate
+        assert query("SELECT status FROM ingestion_runs WHERE id='%s'" % staged['id'])[0]['status'] == 'staging'
+        staged = run('wrong-repository-document')
+        wrong = revision(staged, destination, dest_rev['id'], {**destination_props, 'documents': [person['id']]})
+        link(wrong, person)
+        publish(staged, 400)
+        staged = run('wrong-synced-destination-revision')
+        wrong = revision(staged, observation, sync_rev['id'], {**sync_props, 'synced_destination_revision': dest_b_rev['id']})
+        link(wrong, destination)
+        publish(staged, 400)
+        staged = run('wrong-rendered-hash')
+        wrong = revision(staged, observation, sync_rev['id'], {**sync_props, 'rendered_sha256': 'a'*64})
+        link(wrong, destination)
+        publish(staged, 400)
+        staged = run('wrong-synced-revision')
+        wrong = revision(staged, observation, sync_rev['id'], {**sync_props, 'synced_document_revision': person_rev['id']})
+        link(wrong, destination)
+        publish(staged, 400)
+        staged = run('unpublished-synced-revision')
+        unpublished_doc = revision(staged, document, doc_rev['id'], document_props)
+        wrong = revision(staged, observation, sync_rev['id'], {**sync_props, 'synced_document_revision': unpublished_doc['id']})
+        link(wrong, destination)
+        publish(staged, 400)
+        # Unknown observations need no fabricated Git commit.
+        staged = run('unknown-repository-observation')
+        unknown = revision(staged, observation, sync_rev['id'], {**sync_props, 'github_commit': None, 'sync_status': 'unknown'})
+        link(unknown, destination)
+        publish(staged)
+        # Remapping a destination preserves the old pinned observation as history.
+        staged = run('remapped-repository-destination')
+        remapped = revision(staged, destination, dest_rev['id'], {**destination_props, 'github_path': 'COPYRIGHT.txt'})
+        link(remapped, document)
+        publish(staged)
+        old_sync = json.loads(query("SELECT properties FROM page_revisions WHERE id='%s'" % unknown['id'])[0]['properties'])
+        assert old_sync['synced_destination_revision'] == dest_rev['id']
+        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder}):
+            old_content, old_receipt = repository_files.render(cfg, destination['id'], export_sequence)
+            current_sequence = query('SELECT sequence FROM publications ORDER BY sequence DESC LIMIT 1')[0]['sequence']
+            new_content, new_receipt = repository_files.render(cfg, destination['id'], current_sequence)
+            assert old_content == new_content == source.read_bytes()
+            assert old_receipt['github_path'] == 'COPYRIGHT'
+            assert new_receipt['github_path'] == 'COPYRIGHT.txt'
+        # Clean README bodies can cite their provenance through metadata.
+        markdown = create('pages', {'slug': 'shared-readme', 'kind': 'entity'})
+        staged = run('clean-repository-markdown')
+        clean = revision(staged, markdown, properties={'catalog_type': 'repository_document', 'document_type': 'readme', 'output_mode': 'markdown'}, evidence={'document_type': ['1']}, body='# Synthetic README\n\nInstructions.')
+        cite(clean)
+        markdown_destination = create('pages', {'slug': 'readme-destination', 'kind': 'entity'})
+        md_target = revision(staged, markdown_destination, properties={**destination_props, 'documents': [markdown['id']], 'github_path': 'README.md'})
+        link(md_target, markdown)
+        publish(staged)
+        markdown_sequence = query('SELECT sequence FROM publications ORDER BY sequence DESC LIMIT 1')[0]['sequence']
+        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder}):
+            md_content, md_receipt = repository_files.render(cfg, markdown_destination['id'], markdown_sequence)
+            assert md_content == b'# Synthetic README\n\nInstructions.'
+        staged = run('changed-repository-markdown')
+        clean_next = revision(staged, markdown, clean['id'], properties={'catalog_type': 'repository_document', 'document_type': 'readme', 'output_mode': 'markdown'}, evidence={'document_type': ['1']}, body='# Revised README\n')
+        cite(clean_next)
+        publish(staged)
+        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder}):
+            assert repository_files.render(cfg, markdown_destination['id'], markdown_sequence)[0] == md_content
+            latest = query('SELECT sequence FROM publications ORDER BY sequence DESC LIMIT 1')[0]['sequence']
+            assert repository_files.render(cfg, markdown_destination['id'], latest)[0] == b'# Revised README\n'
+
     print('PASS: revisioned properties, immutable history, conflict rollback, bounded metadata, property provenance and relationship graph')
 
 

@@ -101,5 +101,6 @@ jobs:
           python3 wikicontext/tests/knowledge.py
           python3 wikicontext/tests/ingest.py
           python3 wikicontext/tests/exporter.py
+          python3 wikicontext/tests/repository_files.py
       - name: Test opt-in trace isolation
         run: python3 wikicontext/tests/tracing.py --binary pocketcontext/bin/pocketcontext

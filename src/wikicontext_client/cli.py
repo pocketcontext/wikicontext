@@ -461,6 +461,10 @@ def run(args):
         from . import ingest
         say(dump(ingest.ingest(cfg, args.path, title=args.title, version=args.version, audio_storage=args.audio_storage, image_review=args.image_review), args.pretty), sys.stdout)
         return 0
+    if args.command == 'export-repository-file':
+        from . import repository_files
+        say(dump(repository_files.export(cfg, args.destination_id, args.output, args.sequence), args.pretty), sys.stdout)
+        return 0
     if args.command == 'export-obsidian':
         from . import exporter
         say(dump(exporter.export(cfg, args.destination, sequence=args.sequence), args.pretty), sys.stdout)
@@ -578,6 +582,10 @@ def parse(argv):
                         help='reviewed image passages and provenance JSON; required for PNG/JPEG/WebP')
     source.add_argument('--audio-storage', choices=('normalized', 'original'), default='normalized',
                         help='store normalized Opus audio (default), or preserve input bytes')
+    repository = commands.add_parser('export-repository-file', parents=[pretty], help='create a new repository copy from an explicit publication')
+    repository.add_argument('destination_id', help='repository_destination page ID')
+    repository.add_argument('output', help='new output file; parent directories must exist')
+    repository.add_argument('--sequence', type=int, required=True)
     export = commands.add_parser('export-obsidian', parents=[pretty], help='render a pinned publication and originals into a vault root')
     export.add_argument('destination')
     export.add_argument('--sequence', type=int)

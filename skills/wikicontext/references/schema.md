@@ -27,8 +27,18 @@ The authenticated search endpoint is separate from SQL. Index `pages` takes a re
 
 Revision properties follow the [catalog workflow](workflows.md#catalog-properties).
 Relationship properties contain stable page IDs and are checked against the resulting
-publication and require matching page_links records for each target. `catalog_type` supports resource, credential, deployment, person and group entities.
+publication and require matching page_links records for each target. `catalog_type` supports resource, credential, deployment, person, group, repository_document, repository_destination and repository_sync entities.
 `members` links groups to people; `accountable_owners` and `backup_owners` link to
 groups. Membership is accountability metadata without authentication significance.
 Citation markers may be
 used in the body or `property_evidence` (or both). JSON SQL values may need decoding.
+
+Repository files use existing entity pages and revision properties, not new collections.
+`documents` links each repository destination to one document; `destinations` links
+each sync observation to one destination. Both require page links and typed targets.
+Documents declare `document_type`, `output_mode` and an immutable `source_id` for
+exact copies. Destinations declare `github_repository`, `github_branch` and safe
+relative `github_path`. Sync observations pin `synced_document_revision` and
+`synced_destination_revision`, with intended-byte `rendered_sha256`, `checked_at`,
+`sync_status` and a Git commit (optional for pending/unknown). Exact-copy hashes
+must match the original source. See [repository files](workflows.md#repository-files).

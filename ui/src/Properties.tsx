@@ -4,6 +4,8 @@ import { pageHref } from "./Markdown";
 import type { PageDetail, PageSummary, PropertyValue } from "./types";
 
 export const relationshipKeys = new Set([
+  "documents",
+  "destinations",
   "members",
   "accountable_owners",
   "backup_owners",
@@ -79,6 +81,15 @@ export function PropertyDisplay({
 }
 const prominent = [
   "catalog_type",
+  "document_type",
+  "output_mode",
+  "documents",
+  "destinations",
+  "github_repository",
+  "github_branch",
+  "github_path",
+  "sync_status",
+  "checked_at",
   "resource_type",
   "provider",
   "lifecycle_status",

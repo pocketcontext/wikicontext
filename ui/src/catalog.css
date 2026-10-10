@@ -191,3 +191,11 @@
 .property-evidence:hover {
   background: var(--hover);
 }
+.repository-document-list { display: grid; gap: 1rem; }
+.reader .repository-document { margin: 0; padding: 1.25rem; border: 1px solid var(--border); border-radius: 10px; width: 100%; max-width: none; overflow-wrap: anywhere; }
+.repository-document h2 { margin-top: 0; font-size: 1.2rem; }
+.repository-owner { display: flex; flex-wrap: wrap; gap: .5rem; }
+.repository-destinations { list-style: none; padding: 0; }
+.repository-destinations li { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 1rem; padding: 1rem 0; border-top: 1px solid var(--border); }
+.repository-destinations p { margin: .4rem 0; }
+@media (max-width: 700px) { .repository-destinations li { grid-template-columns: 1fr; } }

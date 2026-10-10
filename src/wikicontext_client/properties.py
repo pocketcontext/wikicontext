@@ -1,12 +1,13 @@
 """Revision property shapes shared by lint and deterministic export."""
+import datetime
 import json
 import math
 import re
 from . import cli as wc
 
 RELATIONSHIPS = frozenset(('deployment_profiles', 'applications', 'resources', 'credentials',
-                           'consumers', 'replaces', 'replaced_by', 'members', 'accountable_owners', 'backup_owners'))
-TARGET_CATALOGS = {'members': 'person', 'accountable_owners': 'group', 'backup_owners': 'group'}
+                           'consumers', 'replaces', 'replaced_by', 'members', 'accountable_owners', 'backup_owners', 'documents', 'destinations'))
+TARGET_CATALOGS = {'members': 'person', 'accountable_owners': 'group', 'backup_owners': 'group', 'documents': 'repository_document', 'destinations': 'repository_destination'}
 RESERVED = frozenset(('wikicontext_page', 'wikicontext_revision', 'id', 'page', 'page_id',
     'revision', 'revision_id', 'publication', 'publication_id', 'kind', 'title', 'summary',
     'body', 'archived', 'run', 'base_revision', 'created', 'updated', 'created_by',
@@ -40,10 +41,11 @@ def read(revision):
             if key in RELATIONSHIPS and (not isinstance(value, list) or
                     any(not re.fullmatch('[a-z0-9]{15}', item) for item in value)):
                 raise ValueError()
-            if key == 'catalog_type' and value not in ('resource', 'credential', 'deployment', 'person', 'group'):
+            if key == 'catalog_type' and value not in ('resource', 'credential', 'deployment', 'person', 'group', 'repository_document', 'repository_destination', 'repository_sync'):
                 raise ValueError()
         if 'members' in properties and properties.get('catalog_type') != 'group':
             raise ValueError()
+        validate_repository(properties)
         for key, markers in evidence.items():
             if (key not in properties or not isinstance(markers, list) or len(markers) > 32
                     or any(not isinstance(marker, str) or not re.fullmatch('[1-9][0-9]{0,5}', marker) for marker in markers)
@@ -52,3 +54,45 @@ def read(revision):
         return properties, evidence
     except (ValueError, TypeError, OverflowError):
         raise wc.Fail(1, 'Invalid published revision properties') from None
+
+
+def validate_repository(p):
+    """Mirror the server's repository-file property shape contract."""
+    def required(key, pattern):
+        if not isinstance(p.get(key), str) or not re.fullmatch(pattern, p[key]):
+            raise ValueError()
+    catalog = p.get('catalog_type')
+    for key, owner in (('documents', 'repository_destination'), ('destinations', 'repository_sync')):
+        if key in p and catalog != owner:
+            raise ValueError()
+    if catalog == 'repository_document':
+        if p.get('document_type') not in ('readme', 'license', 'copyright', 'notice', 'contributing', 'other') or p.get('output_mode') not in ('exact_copy', 'markdown'):
+            raise ValueError()
+        if p['output_mode'] == 'exact_copy':
+            required('source_id', '[a-z0-9]{15}')
+    if catalog == 'repository_destination':
+        if len(p.get('documents', [])) != 1:
+            raise ValueError()
+        required('github_repository', '[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+')
+        if p['github_repository'].split('/')[1] in ('.', '..'):
+            raise ValueError()
+        required('github_branch', r'[^\s\x00-\x1f\x7f~^:?*\[\\]+')
+        branch = p['github_branch']
+        if (branch.startswith(('-', '/')) or branch.endswith(('/', '.')) or '..' in branch or '@{' in branch or branch == '@'
+                or any(not v or v.startswith('.') or v.endswith('.lock') for v in branch.split('/'))):
+            raise ValueError()
+        required('github_path', r'[^\x00-\x1f\x7f\\]+')
+        if any(v in ('', '.', '..') or v.lower() == '.git' for v in p['github_path'].split('/')):
+            raise ValueError()
+    if catalog == 'repository_sync':
+        if len(p.get('destinations', [])) != 1:
+            raise ValueError()
+        required('synced_document_revision', '[a-z0-9]{15}')
+        required('synced_destination_revision', '[a-z0-9]{15}')
+        required('rendered_sha256', '[a-f0-9]{64}')
+        if p.get('github_commit') is not None or p.get('sync_status') not in ('pending', 'unknown'):
+            required('github_commit', '(?:[a-f0-9]{40}|[a-f0-9]{64})')
+        required('checked_at', r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z')
+        datetime.datetime.fromisoformat(p['checked_at'].replace('Z', '+00:00'))
+        if p.get('sync_status') not in ('current', 'behind', 'diverged', 'pending', 'unknown'):
+            raise ValueError()

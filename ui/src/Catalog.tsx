@@ -1,3 +1,4 @@
+import RepositoryFiles from "./RepositoryFiles";
 import { catalogValue, groupsFor, ids } from "./ownership";
 import { pageHref } from "./Markdown";
 import {
@@ -14,6 +15,7 @@ export const catalogTypes = [
   "deployment",
   "person",
   "group",
+  "repository_document",
 ] as const;
 export const catalogLabels = {
   resource: "Resources",
@@ -21,11 +23,15 @@ export const catalogLabels = {
   deployment: "Deployments",
   person: "People",
   group: "Groups",
+  repository_document: "Repository files",
 };
 export type CatalogType = (typeof catalogTypes)[number];
 export interface CatalogState {
   type: CatalogType;
   query: string;
+  repository?: string;
+  documentType?: string;
+  syncStatus?: string;
   group?: string;
   member?: string;
   provider: string;
@@ -48,6 +54,7 @@ export function catalogHref(
   return `#/catalog/${state.type || "resource"}${params.size ? `?${params}` : ""}`;
 }
 const columns: Record<CatalogType, string[]> = {
+  repository_document: ["document_type", "output_mode", "accountable_owners"],
   person: ["role", "organization", "groups", "crm_url"],
   group: ["purpose", "members", "owned_resources", "owned_deployments"],
   resource: [
@@ -152,6 +159,7 @@ export default function Catalog({
   publication?: string;
   onNavigate?: (href: string) => void;
 }) {
+  if (state.type === "repository_document") return <RepositoryFiles pages={pages} state={state} publication={publication} onNavigate={onNavigate} />;
   const update = (patch: Partial<CatalogState>) => {
     const href = catalogHref({ ...state, offset: 0, ...patch }, publication);
     if (onNavigate) onNavigate(href);

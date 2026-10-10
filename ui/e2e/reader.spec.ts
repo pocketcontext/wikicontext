@@ -834,3 +834,33 @@ test("people and group membership, responsibilities and publication history", as
   await expect(page.locator(".catalog-cards").getByRole("link", { name: "Ben", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
 });
+
+test("repository files group copies, filter, preserve history and expose stale checks on mobile", async ({ page, request }) => {
+  const seeded = await request.post(process.env.WIKICONTEXT_TEST_CONTROL + "/repository-files");
+  expect(seeded.ok(), await seeded.text()).toBeTruthy();
+  const publication = await seeded.json() as { id: string };
+  await login(page);
+  const catalog = page.getByRole("region", { name: "Repository files catalog" });
+  await page.goto(`/#/catalog/repository_document?publication=${publication.id}`);
+  await expect(page.getByRole("heading", { name: "Repository files", exact: true })).toBeVisible();
+  await expect(catalog.getByRole("link", { name: "README copy one", exact: true })).toBeVisible();
+  await expect(catalog.getByRole("link", { name: "README copy two", exact: true })).toBeVisible();
+  await expect(page.locator(".repository-destinations strong").first()).toHaveText("current");
+  await page.getByLabel("Repository", { exact: true }).selectOption("example/one");
+  await page.reload();
+  await expect(page.getByLabel("Repository", { exact: true })).toHaveValue("example/one");
+  await expect(catalog.getByRole("link", { name: "README copy two", exact: true })).toHaveCount(0);
+  await page.getByRole("link", { name: "Sync evidence", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(new RegExp(`page/readme-sync\\?publication=${publication.id}`));
+  const updated = await request.post(process.env.WIKICONTEXT_TEST_CONTROL + "/repository-files-update");
+  expect(updated.ok(), await updated.text()).toBeTruthy();
+  const later = await updated.json() as { id: string };
+  await page.goto(`/#/catalog/repository_document?publication=${later.id}&syncStatus=behind`);
+  await expect(page.locator(".repository-destinations strong")).toHaveText("behind");
+  await expect(page.getByText("Source revision differs from the last synchronized revision.")).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await page.goto(`/#/catalog/repository_document?publication=${publication.id}&repository=example%2Fone`);
+  await expect(page.locator(".repository-destinations strong")).toHaveText("current");
+});

@@ -121,6 +121,39 @@ updated client for lint and export: older client validators reject the new catal
 types. Existing pages require no automatic classification or data migration when
 the preflight finds no conflicting properties; adopt them through reviewed revisions.
 
+### Repository files
+
+The Repository files catalog keeps one authoritative document and separate GitHub
+destinations for intentionally shared copies. READMEs, licenses, copyright files,
+notices and contribution guides use the same publication and ownership model.
+Matching bytes alone do not establish that two files should share one document.
+Repository-specific variants remain separate documents. Archived applications are
+excluded from routine adoption.
+
+`repository_document` pages select plain Markdown or an immutable original for
+exact copying. `repository_destination` pages identify a document, GitHub
+repository, branch and relative file path. Separate `repository_sync` pages record
+dated observations pinned to both document and destination revisions. Recording a
+sync never changes the authoritative document. A recorded status is not a live
+GitHub check; changed content or destination mappings require fresh comparison.
+
+The portable client's `export-repository-file` command prepares one destination
+from an explicitly selected publication in a new local output file. It does not
+replace existing files, commit, push or publish a sync observation. Exact copies retain
+original bytes and verify their source hash. Plain Markdown export fails closed
+on unsupported wiki markup rather than silently changing its meaning. Metadata
+and evidence stay outside exported license and copyright bytes.
+Extensionless UTF-8 files such as `LICENSE`, `COPYRIGHT` and `NOTICE` can be ingested
+directly; their original bytes are retained independently of extracted passages.
+
+Follow the [repository files workflow](skills/wikicontext/references/workflows.md)
+to adopt documents, compare independent GitHub edits, prepare reviewable diffs and
+record completed or pending updates. Publishing a wiki revision never triggers a
+GitHub rollout. Do not infer copyright holders or automatically advance years.
+Existing content is not automatically classified or imported. Release the tested
+package and backend/reader before publishing the new catalog types; older client
+validators do not recognize them.
+
 The exporter writes `wiki/` and `raw/` under the destination. Numbered source footnotes, wiki-links, page metadata, index and publication log are deterministic. Exports pin one immutable publication; `--sequence N` selects history. An ownership manifest detects local edits/deletions, prevents overwriting unrelated files, and supports interrupted-export recovery. `.obsidian/` remains untouched. Avoid concurrent local editing during export; the exporter lock coordinates exporters, not external editors. Use a fresh destination for initial migration: existing authored wiki files are not silently adopted. Downloaded files cannot be revoked remotely.
 
 See [data model](docs/data-model.md) and [skill workflows](skills/wikicontext/references/workflows.md) for synthesis, idempotency, queries, corrections and publication. Structural lint does not establish semantic correctness. Full-text search indexes published revision title, summary and body; it uses token matching rather than the former arbitrary substring matching. It does not provide vector search or generated answers. Raw SQL queries must explicitly distinguish draft revisions from the published manifest.
@@ -178,6 +211,7 @@ python3 tests/client.py
 python3 tests/knowledge.py
 python3 tests/ingest.py
 python3 tests/exporter.py
+python3 tests/repository_files.py
 python3 tests/bootstrap.py
 python3 tests/deploy_workflow.py
 ```

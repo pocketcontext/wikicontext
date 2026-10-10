@@ -114,6 +114,32 @@ def seed(request):
             request('PATCH', '/api/collections/ingestion_runs/records/' + run['id'],
                 {'expected_revision': run['revision'], 'status': 'published'}, token)
             return request('GET', '/api/collections/publications/records?sort=-sequence&perPage=1', token=token)['items'][0]
+        if action == '/repository-files':
+            request('PATCH', '/api/settings', {'rateLimits': {'enabled': False}}, admin)
+            run = create('ingestion_runs', {'key': 'browser-repository-files', 'status': 'staging', 'description': 'Synthetic repository files'})
+            document = create('pages', {'slug': 'shared-readme', 'kind': 'entity'})
+            props = {'catalog_type': 'repository_document', 'document_type': 'readme', 'output_mode': 'markdown', 'lifecycle_status': 'active'}
+            revision = create('page_revisions', {'run': run['id'], 'page': document['id'], 'title': 'Shared README', 'summary': 'Synthetic shared file.', 'body': 'Synthetic readme. [needs verification]', 'properties': props})
+            destinations = []
+            for name in ('one', 'two'):
+                page = create('pages', {'slug': 'readme-copy-' + name, 'kind': 'entity'})
+                target = create('page_revisions', {'run': run['id'], 'page': page['id'], 'title': 'README copy ' + name, 'summary': 'Synthetic destination.', 'body': 'Synthetic destination. [needs verification]', 'properties': {'catalog_type': 'repository_destination', 'documents': [document['id']], 'github_repository': 'example/' + name, 'github_branch': 'main', 'github_path': 'README.md', 'lifecycle_status': 'active'}})
+                create('page_links', {'page_revision': target['id'], 'target': document['id']})
+                destinations.append((page, target))
+            request('PATCH', '/api/collections/ingestion_runs/records/' + run['id'], {'expected_revision': run['revision'], 'status': 'published'}, token)
+            run = create('ingestion_runs', {'key': 'browser-repository-sync', 'status': 'staging', 'description': 'Synthetic sync evidence'})
+            page = create('pages', {'slug': 'readme-sync', 'kind': 'entity'})
+            observation = create('page_revisions', {'run': run['id'], 'page': page['id'], 'title': 'README synchronization', 'summary': 'Synthetic check.', 'body': 'Synthetic check. [needs verification]', 'properties': {'catalog_type': 'repository_sync', 'destinations': [destinations[0][0]['id']], 'synced_document_revision': revision['id'], 'synced_destination_revision': destinations[0][1]['id'], 'rendered_sha256': 'a' * 64, 'github_commit': 'b' * 40, 'checked_at': '2026-10-10T10:00:00Z', 'sync_status': 'current'}})
+            create('page_links', {'page_revision': observation['id'], 'target': destinations[0][0]['id']})
+            request('PATCH', '/api/collections/ingestion_runs/records/' + run['id'], {'expected_revision': run['revision'], 'status': 'published'}, token)
+            state['repository_document'] = (document, revision, props)
+            return request('GET', '/api/collections/publications/records?sort=-sequence&perPage=1', token=token)['items'][0]
+        if action == '/repository-files-update':
+            document, revision, props = state['repository_document']
+            run = create('ingestion_runs', {'key': 'browser-repository-update', 'status': 'staging', 'description': 'Synthetic document update'})
+            create('page_revisions', {'run': run['id'], 'page': document['id'], 'base_revision': revision['id'], 'title': 'Shared README', 'summary': 'Updated synthetic file.', 'body': 'Updated synthetic readme. [needs verification]', 'properties': props})
+            request('PATCH', '/api/collections/ingestion_runs/records/' + run['id'], {'expected_revision': run['revision'], 'status': 'published'}, token)
+            return request('GET', '/api/collections/publications/records?sort=-sequence&perPage=1', token=token)['items'][0]
         if action == '/catalog':
             request('PATCH', '/api/settings', {'rateLimits': {'enabled': False}}, admin)
             run = create('ingestion_runs', {'key': 'browser-catalog', 'status': 'staging', 'description': 'Synthetic property catalog'})

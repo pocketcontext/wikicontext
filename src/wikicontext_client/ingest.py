@@ -223,7 +223,7 @@ def chunks(text, locator):
 
 def extract(path, content, normalized=False):
     suffix = path.suffix.lower()
-    if suffix in TEXT:
+    if suffix in TEXT or not suffix:
         try:
             return 'text', 'utf-8 text / wikicontext-1', chunks(content.decode('utf-8-sig'), 'document')
         except UnicodeDecodeError:

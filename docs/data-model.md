@@ -52,7 +52,8 @@ immutable, while global BM25 scores can change with index growth. See
 Properties belong to immutable revisions, so publication, conflict checks, history
 and export select exactly the same values as the page body. Older revisions have
 empty properties. No migration classifies or rewrites existing wiki content.
-Use `catalog_type` (`resource`, `credential`, `deployment`, `person`, or `group`) on entity pages to
+Use `catalog_type` (`resource`, `credential`, `deployment`, `person`, `group`,
+`repository_document`, `repository_destination`, or `repository_sync`) on entity pages to
 opt into the catalog reader. Other page kinds and uncategorized pages still work.
 
 `properties` is a JSON object of at most 64 lowercase snake_case keys (1–64 ASCII
@@ -103,3 +104,44 @@ the selected publication; evidence appears in a separate Markdown section using
 the same source footnotes as the body. System metadata cannot be overridden.
 Properties are queried with authenticated SQL JSON functions and publication
 manifest joins. Full-text body search does not index property values.
+
+### Repository documents and copies
+
+Repository files reuse immutable page identities, revisions, citations and atomic
+publication. A document is a logical source, not a repository file location. Several
+destinations can reference the same document only when they are intentionally
+maintained as copies. Coincidentally identical bytes do not merge identities.
+
+`repository_document` requires `document_type` (`readme`, `license`, `copyright`,
+`notice`, `contributing`, `other`) and `output_mode` (`exact_copy`, `markdown`).
+Exact-copy mode requires `source_id` identifying an existing immutable original;
+the protected original and its server-recorded SHA-256 are authoritative bytes.
+Markdown mode exports the revision body. It may place its supporting citations in
+`property_evidence` to keep wiki citation markers outside the distributed body.
+The exporter rejects unsupported wiki markup. Neither mode injects metadata,
+notices or copyright-year changes. Templates and embedded source-code headers are
+outside this implementation.
+
+`repository_destination` requires exactly one `documents` page relationship,
+`github_repository` as owner/repository, an explicit `github_branch`, and a safe
+relative `github_path`. Matching `page_links` records are required. Publication
+enforces one active destination per repository/branch/path; repository comparison
+is case-insensitive while branch and path remain case-sensitive. Retired
+destinations use `lifecycle_status: retired`; archived revisions retain history.
+
+`repository_sync` is a separate observation page with exactly one `destinations`
+relationship, `synced_destination_revision`, `synced_document_revision`,
+`rendered_sha256`, `checked_at` in UTC, `sync_status`, and `github_commit` when
+known. Status is `current`, `behind`, `diverged`, `pending` or `unknown`; pending
+and unknown may omit the commit. Both revision references must have appeared in
+published history, and the pinned destination must reference the pinned document.
+`rendered_sha256` identifies the intended document output, not a divergent GitHub
+file; exact-copy observations must match the immutable original's hash.
+This permits historical observations to remain valid when today's mapping changes.
+An observation is dated evidence, not a live GitHub query or permission to push.
+The reader derives freshness against the selected publication's revisions.
+
+Each sync check should create a new observation identity, preserving independent
+attempts and partial progress across repositories. Source content does not change
+when a sync observation is published. GitHub edits must be compared and reviewed
+before replacing a copy; a pending pull request is not a completed rollout.

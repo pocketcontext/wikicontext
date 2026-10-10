@@ -180,3 +180,27 @@ valid revision fields when adopting these properties. Do not store a second
 `groups` list on people: derive membership by joining group revisions and their
 `members` arrays through the same publication manifest. Group membership does
 not grant access or send notifications.
+
+## Repository file properties
+
+These are properties for three separate entity-page revisions. Add normal
+citations/property evidence and `page_links` for relationship fields before
+publishing. IDs below are synthetic placeholders.
+
+```json
+{"catalog_type":"repository_document","document_type":"copyright","output_mode":"exact_copy","source_id":"sssssssssssssss"}
+```
+
+```json
+{"catalog_type":"repository_destination","documents":["ddddddddddddddd"],"github_repository":"example/project","github_branch":"main","github_path":"COPYRIGHT","lifecycle_status":"active"}
+```
+
+After actual Git verification, record an observation (use real returned revisions,
+hash, commit and timestamp rather than these placeholders):
+
+```json
+{"catalog_type":"repository_sync","destinations":["ttttttttttttttt"],"synced_document_revision":"rrrrrrrrrrrrrrr","synced_destination_revision":"vvvvvvvvvvvvvvv","rendered_sha256":"0000000000000000000000000000000000000000000000000000000000000000","github_commit":"0000000000000000000000000000000000000000","checked_at":"2026-10-10T12:00:00Z","sync_status":"current"}
+```
+
+One document can have many destination pages. To inspect a copy without changing a
+repository, use `wikicontext export-repository-file ttttttttttttttt /tmp/COPYRIGHT.review --sequence 12`.

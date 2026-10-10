@@ -27,7 +27,7 @@ function publish(app,run){
   for(const key of Object.keys(evidence))for(const marker of evidence[key])markers.add(marker);
   for(const marker of markers)if(!citations.some(c=>c.getString('marker')===marker))invalid('Missing citation marker '+marker);
   for(const c of citations)if(!markers.has(c.getString('marker')))invalid('Unused citation');
-  if(!bodyMarkers.length&&!body.includes('[needs verification]'))invalid('Uncited content must include [needs verification]');
+  if(!bodyMarkers.length&&!body.includes('[needs verification]')&&!(properties.catalog_type==='repository_document'&&properties.output_mode==='markdown'&&Object.keys(evidence).some(key=>evidence[key].length)))invalid('Uncited content must include [needs verification]');
   const links=rows(app,'page_links','page_revision = {:id}',{id:r.id});
   const linkedIds=new Set(links.map(l=>l.getString('target')));
   for(const key of metadata.relationships)for(const id of properties[key]||[])if(!linkedIds.has(id))invalid('Relationship property needs a page_links record: '+key);
@@ -41,6 +41,7 @@ function publish(app,run){
    if(!target||app.findRecordById('page_revisions',target).getBool('archived'))invalid('Link target is not published');
   }
  }
+ const destinationKeys=new Set();
  // Archiving cannot leave links from unchanged published pages dangling.
  for(const page in manifest){const r=app.findRecordById('page_revisions',manifest[page]);if(r.getBool('archived'))continue;
   const metadata=require(`${__hooks}/properties.js`),properties=metadata.validate(r).properties;
@@ -49,6 +50,21 @@ function publish(app,run){
    if(!selected)invalid('Relationship target is not published: '+key);
    const target=app.findRecordById('page_revisions',selected);
    if(target.getBool('archived')||metadata.validate(target).properties.catalog_type!==metadata.targetCatalogs[key])invalid('Relationship target has invalid catalog type: '+key);
+  }
+  if(properties.catalog_type==='repository_document'&&properties.output_mode==='exact_copy')app.findRecordById('sources',properties.source_id);
+  if(properties.catalog_type==='repository_destination'&&properties.lifecycle_status!=='retired'){
+   const key=JSON.stringify([properties.github_repository.toLowerCase(),properties.github_branch,properties.github_path]);
+   if(destinationKeys.has(key))invalid('Duplicate active GitHub destination');
+   destinationKeys.add(key);
+  }
+  if(properties.catalog_type==='repository_sync'){
+   const destination=app.findRecordById('page_revisions',properties.synced_destination_revision);
+   if(destination.getString('page')!==properties.destinations[0]||destination.getBool('archived')||metadata.validate(destination).properties.catalog_type!=='repository_destination'||app.findRecordById('ingestion_runs',destination.getString('run')).getString('status')!=='published')invalid('Sync destination revision must be published and belong to its destination');
+   const document=metadata.validate(destination).properties.documents[0];
+   const synced=app.findRecordById('page_revisions',properties.synced_document_revision);
+   if(synced.getString('page')!==document||synced.getBool('archived')||metadata.validate(synced).properties.catalog_type!=='repository_document'||app.findRecordById('ingestion_runs',synced.getString('run')).getString('status')!=='published')invalid('Sync revision must be a published revision of the destination document');
+   const source=metadata.validate(synced).properties;
+   if(source.output_mode==='exact_copy'&&app.findRecordById('sources',source.source_id).getString('sha256')!==properties.rendered_sha256)invalid('Rendered hash does not match exact-copy source');
   }
   for(const l of rows(app,'page_links','page_revision = {:id}',{id:r.id})){
    const target=manifest[l.getString('target')];
@@ -74,7 +90,8 @@ function validate(app,r){
  }
  if(t==='pages'&&['index','log'].includes(r.getString('slug')))invalid('Reserved page slug');
  if(t==='page_revisions'){
-  require(`${__hooks}/properties.js`).validate(r);
+  const metadata=require(`${__hooks}/properties.js`).validate(r).properties;
+  if(metadata.catalog_type==='repository_document'&&metadata.output_mode==='exact_copy')app.findRecordById('sources',metadata.source_id);
   draft(app,r.getString('run'));
   const base=r.getString('base_revision');
   if(base&&app.findRecordById('page_revisions',base).getString('page')!==r.getString('page'))invalid('Base revision belongs to another page');

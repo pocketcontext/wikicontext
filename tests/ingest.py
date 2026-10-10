@@ -67,6 +67,15 @@ class IngestionTests(unittest.TestCase):
         path.write_bytes(content)
         return path
 
+    def test_extensionless_repository_text(self):
+        for name in ('LICENSE', 'COPYRIGHT', 'NOTICE'):
+            content = b'Copyright synthetic example.\r\n'
+            kind, processor, passages = ingest.extract(Path(name), content)
+            self.assertEqual(kind, 'text')
+            self.assertEqual(passages[0]['body'], content.decode())
+        with self.assertRaises(ingest.wc.Fail):
+            ingest.extract(Path('LICENSE'), b'\xff')
+
     def test_interrupted_passages_resume_and_duplicate(self):
         source = self.source('evidence.md', ('first\n' * 12000).encode())
         self.store.fail_ordinal = 2
