@@ -141,6 +141,10 @@ def render(cfg, sequence=None):
             if key in props.RELATIONSHIPS:
                 if any(target not in pages for target in value):
                     raise wc.Fail(1, 'Property relationship is absent from selected publication')
+                if key in props.TARGET_CATALOGS and any(
+                        props.read(revisions[target])[0].get('catalog_type') != props.TARGET_CATALOGS[key]
+                        for target in value):
+                    raise wc.Fail(1, 'Property relationship target has invalid catalog type')
                 value = ['[[' + pages[target]['slug'] + ']]' for target in value]
             frontmatter[key] = value
         body = '---\n' + ''.join(k + ': ' + yaml_value(v) + '\n' for k, v in frontmatter.items()) + '---\n\n'

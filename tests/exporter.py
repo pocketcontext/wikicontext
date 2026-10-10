@@ -98,10 +98,14 @@ class ExportTests(unittest.TestCase):
         def put(table, values):
             db.execute(f'INSERT INTO {table} VALUES ({",".join("?" for _ in values)})', values)
         pid, rid, run, sid = 'a'*15, 'b'*15, 'c'*15, 'd'*15
-        put('publications', ('p'*15, run, 1, json.dumps({pid: rid}), '2026-01-01'))
+        put('publications', ('p'*15, run, 1, json.dumps({pid: rid, 'h'*15: 'i'*15, 'j'*15: 'k'*15}), '2026-01-01'))
         put('publications', ('q'*15, 'z'*15, 2, '{}', '2026-01-02'))
         put('pages', (pid, 'example', 'concept'))
-        put('page_revisions', (rid, pid, run, 'Example', 'Summary', 'Evidence [^1].', 0, '2026-01-01', json.dumps({'catalog_type': 'resource', 'resources': [pid], 'accountable_owner': None, 'exact_name': 'yes\n---\ntitle: forged', 'enabled': True}), json.dumps({'exact_name': ['1']})))
+        put('page_revisions', (rid, pid, run, 'Example', 'Summary', 'Evidence [^1].', 0, '2026-01-01', json.dumps({'catalog_type': 'resource', 'resources': [pid], 'accountable_owners': ['h'*15], 'backup_owners': ['h'*15], 'accountable_owner': None, 'exact_name': 'yes\n---\ntitle: forged', 'enabled': True}), json.dumps({'exact_name': ['1']})))
+        put('pages', ('h'*15, 'core', 'entity'))
+        put('pages', ('j'*15, 'person', 'entity'))
+        put('page_revisions', ('i'*15, 'h'*15, run, 'Core', 'Group', '[needs verification]', 0, '2026-01-01', json.dumps({'catalog_type': 'group', 'members': ['j'*15]}), '{}'))
+        put('page_revisions', ('k'*15, 'j'*15, run, 'Person', 'Person', '[needs verification]', 0, '2026-01-01', json.dumps({'catalog_type': 'person'}), '{}'))
         put('citations', ('e'*15, rid, 'f'*15, '1', 'supports example'))
         put('passages', ('f'*15, 'g'*15, 'page 1'))
         put('renditions', ('g'*15, sid))
@@ -127,6 +131,9 @@ class ExportTests(unittest.TestCase):
         header = markdown.split('---\n', 2)[1]
         frontmatter = {key: json.loads(value) for key, value in (line.split(': ', 1) for line in header.splitlines())}
         self.assertEqual(frontmatter['resources'], ['[[example]]'])
+        self.assertEqual(frontmatter['accountable_owners'], ['[[core]]'])
+        self.assertEqual(frontmatter['backup_owners'], ['[[core]]'])
+        self.assertIn(b'members: ["[[person]]"]', files['wiki/core.md'])
         self.assertIsNone(frontmatter['accountable_owner'])
         self.assertIs(frontmatter['enabled'], True)
         self.assertEqual(frontmatter['exact_name'], 'yes\n---\ntitle: forged')
@@ -136,7 +143,7 @@ class ExportTests(unittest.TestCase):
     def test_invalid_properties_rejected(self):
         from wikicontext_client import properties
         for value in [{'title': 'override'}, {'nested': {'x': 1}}, {'resources': ['missing']},
-                      {'catalog_type': 'invented'}, {'number': float('nan')}, {'tags': ['a', 'a']}]:
+                      {'catalog_type': 'invented'}, {'catalog_type': 'person', 'members': []}, {'members': []}, {'number': float('nan')}, {'tags': ['a', 'a']}]:
             with self.subTest(value=value), self.assertRaises(wc.Fail):
                 properties.read({'properties': value})
         with self.assertRaises(wc.Fail):

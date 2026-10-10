@@ -43,6 +43,13 @@ function publish(app,run){
  }
  // Archiving cannot leave links from unchanged published pages dangling.
  for(const page in manifest){const r=app.findRecordById('page_revisions',manifest[page]);if(r.getBool('archived'))continue;
+  const metadata=require(`${__hooks}/properties.js`),properties=metadata.validate(r).properties;
+  for(const key of Object.keys(metadata.targetCatalogs))for(const id of properties[key]||[]){
+   const selected=manifest[id];
+   if(!selected)invalid('Relationship target is not published: '+key);
+   const target=app.findRecordById('page_revisions',selected);
+   if(target.getBool('archived')||metadata.validate(target).properties.catalog_type!==metadata.targetCatalogs[key])invalid('Relationship target has invalid catalog type: '+key);
+  }
   for(const l of rows(app,'page_links','page_revision = {:id}',{id:r.id})){
    const target=manifest[l.getString('target')];
    if(!target||app.findRecordById('page_revisions',target).getBool('archived'))invalid('Publication would leave a broken link');

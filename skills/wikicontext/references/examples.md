@@ -143,10 +143,40 @@ JOIN pages AS p ON p.id = selected.key
 JOIN page_revisions AS r ON r.id = selected.value AND r.page = p.id
 WHERE pub.sequence = 1 AND r.archived = false
   AND json_extract(r.properties, '$.catalog_type') = 'resource'
+  AND coalesce(json_array_length(json_extract(r.properties, '$.accountable_owners')), 0) = 0
   AND (json_extract(r.properties, '$.accountable_owner') IS NULL
-       OR json_extract(r.properties, '$.accountable_owner') = '')
+       OR json_extract(r.properties, '$.accountable_owner') = ''
+       OR (json_type(r.properties, '$.accountable_owner') = 'array'
+           AND json_array_length(r.properties, '$.accountable_owner') = 0))
 ORDER BY p.id LIMIT 100;
 ```
 
 Page with `p.id > 'LAST_PAGE_ID'` using the same sequence until complete. Retrieve
 `r.property_evidence`, the cited passages and page body before reporting a claim.
+
+
+## People and groups
+
+These synthetic property objects illustrate the catalog contract, not complete
+revision requests. Use queried stable entity page IDs and reviewed evidence.
+Publish ordinary revisions with the current `base_revision`, citations and a
+`page_links` record for each member or owner target. New people and groups can
+be staged together in one run before resources refer to the group.
+
+```json
+{"catalog_type":"person","role":"Operations lead","organization":"Example","crm_url":"https://crm.example.test/#/people/ACTUAL_RECORD_ID"}
+```
+
+```json
+{"catalog_type":"group","purpose":"Maintain the example deployment","members":["PERSON_PAGE_ID1","PERSON_PAGE_ID2"]}
+```
+
+```json
+{"catalog_type":"deployment","accountable_owners":["GROUP_PAGE_ID01"],"backup_owners":["GROUP_PAGE_ID01"]}
+```
+
+Replace every illustrative ID and CRM origin before writing. Retain all other
+valid revision fields when adopting these properties. Do not store a second
+`groups` list on people: derive membership by joining group revisions and their
+`members` arrays through the same publication manifest. Group membership does
+not grant access or send notifications.

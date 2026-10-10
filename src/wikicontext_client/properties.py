@@ -5,7 +5,8 @@ import re
 from . import cli as wc
 
 RELATIONSHIPS = frozenset(('deployment_profiles', 'applications', 'resources', 'credentials',
-                           'consumers', 'replaces', 'replaced_by'))
+                           'consumers', 'replaces', 'replaced_by', 'members', 'accountable_owners', 'backup_owners'))
+TARGET_CATALOGS = {'members': 'person', 'accountable_owners': 'group', 'backup_owners': 'group'}
 RESERVED = frozenset(('wikicontext_page', 'wikicontext_revision', 'id', 'page', 'page_id',
     'revision', 'revision_id', 'publication', 'publication_id', 'kind', 'title', 'summary',
     'body', 'archived', 'run', 'base_revision', 'created', 'updated', 'created_by',
@@ -39,8 +40,10 @@ def read(revision):
             if key in RELATIONSHIPS and (not isinstance(value, list) or
                     any(not re.fullmatch('[a-z0-9]{15}', item) for item in value)):
                 raise ValueError()
-            if key == 'catalog_type' and value not in ('resource', 'credential', 'deployment'):
+            if key == 'catalog_type' and value not in ('resource', 'credential', 'deployment', 'person', 'group'):
                 raise ValueError()
+        if 'members' in properties and properties.get('catalog_type') != 'group':
+            raise ValueError()
         for key, markers in evidence.items():
             if (key not in properties or not isinstance(markers, list) or len(markers) > 32
                     or any(not isinstance(marker, str) or not re.fullmatch('[1-9][0-9]{0,5}', marker) for marker in markers)

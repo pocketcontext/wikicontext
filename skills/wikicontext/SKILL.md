@@ -29,7 +29,7 @@ For PNG/JPEG/WebP, view the image and prepare a review JSON file, then use `wiki
 
 Read extracted passages in full using SQL with bounded pagination. Query related published content and original evidence. Create source summaries, concepts/entities, and audio transcript pages as warranted, with numbered markers and structured citations to passages. Reuse stable page identities and preserve slugs. Stage immutable revisions, citation records and link records under one ingestion run. Use `stage-home` to choose or clear the reader home while staging; it captures the expected published home. Publish without home flags to preserve that base, and reassess any home conflict rather than refreshing it automatically. See the home workflow for explicit-base changes. Publish only after checking all evidence and conflicts. Never overwrite a changed base revision without reassessing the changes.
 
-For resource, deployment and credential catalogs, follow [catalog properties](references/workflows.md#catalog-properties). Store flat typed metadata on immutable revisions with property-specific citation markers and stable page-ID relationships. Keep secret values outside the shared wiki.
+For resource, deployment, credential, person and group catalogs, follow [catalog properties](references/workflows.md#catalog-properties). Store flat typed metadata on immutable revisions with property-specific citation markers and stable page-ID relationships. Keep secret values outside the shared wiki. Group membership records accountability only; it grants no access and sends no notifications. Reuse reviewed person identities and CRM links rather than creating duplicate people.
 
 ## Questions and exports
 

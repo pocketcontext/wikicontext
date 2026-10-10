@@ -1,8 +1,12 @@
+import { groupsFor, ownedBy } from "./ownership";
 import { useState } from "react";
 import { pageHref } from "./Markdown";
 import type { PageDetail, PageSummary, PropertyValue } from "./types";
 
 export const relationshipKeys = new Set([
+  "members",
+  "accountable_owners",
+  "backup_owners",
   "deployment_profiles",
   "applications",
   "resources",
@@ -54,6 +58,16 @@ export function PropertyDisplay({
       </span>
     );
   }
+  if (
+    name === "crm_url" &&
+    typeof value === "string" &&
+    /^https?:\/\//i.test(value)
+  )
+    return (
+      <a href={value} target="_blank" rel="noopener noreferrer">
+        CRM record
+      </a>
+    );
   const text = propertyText(value);
   // Display dates in their recorded precision; never infer an observation time.
   return typeof value === "string" &&
@@ -69,6 +83,13 @@ const prominent = [
   "provider",
   "lifecycle_status",
   "accountable_owner",
+  "accountable_owners",
+  "backup_owners",
+  "members",
+  "role",
+  "organization",
+  "purpose",
+  "crm_url",
   "provider_observed_at",
 ];
 export default function PropertiesPanel({
@@ -147,6 +168,55 @@ export default function PropertiesPanel({
           </summary>
           {fields(rest)}
         </details>
+      )}
+      {(properties.catalog_type === "person" ||
+        properties.catalog_type === "group") && (
+        <div className="ownership-details">
+          {properties.catalog_type === "person" && (
+            <>
+              <h3>Groups</h3>
+              <PropertyDisplay
+                name="members"
+                value={groupsFor(page, pages).map((group) => group.page)}
+                pages={pages}
+                publication={publication}
+              />
+            </>
+          )}
+          <h3>
+            {properties.catalog_type === "person"
+              ? "Responsibilities through groups"
+              : "Responsibilities"}
+          </h3>
+          {["accountable_owners", "backup_owners"].map((role) => {
+            const items = ownedBy(
+              properties.catalog_type === "group"
+                ? [page.page]
+                : groupsFor(page, pages).map((group) => group.page),
+              pages,
+              role,
+            );
+            return (
+              <div key={role}>
+                <h4>
+                  {role === "accountable_owners"
+                    ? "Accountable for"
+                    : "Backups for"}
+                </h4>
+                {items.length ? (
+                  <PropertyDisplay
+                    name="resources"
+                    value={items.map((item) => item.page)}
+                    pages={pages}
+                    publication={publication}
+                  />
+                ) : (
+                  <p>None recorded in this publication.</p>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
       {copied && <p role="status">{copied}</p>}
     </section>

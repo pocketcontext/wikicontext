@@ -1,3 +1,4 @@
+import { catalogValue, groupsFor, ids } from "./ownership";
 import { pageHref } from "./Markdown";
 import {
   PropertyDisplay,
@@ -7,11 +8,26 @@ import {
 } from "./Properties";
 import type { PageSummary } from "./types";
 
-export const catalogTypes = ["resource", "credential", "deployment"] as const;
+export const catalogTypes = [
+  "resource",
+  "credential",
+  "deployment",
+  "person",
+  "group",
+] as const;
+export const catalogLabels = {
+  resource: "Resources",
+  credential: "Credentials",
+  deployment: "Deployments",
+  person: "People",
+  group: "Groups",
+};
 export type CatalogType = (typeof catalogTypes)[number];
 export interface CatalogState {
   type: CatalogType;
   query: string;
+  group?: string;
+  member?: string;
   provider: string;
   deployment: string;
   lifecycle: string;
@@ -32,12 +48,14 @@ export function catalogHref(
   return `#/catalog/${state.type || "resource"}${params.size ? `?${params}` : ""}`;
 }
 const columns: Record<CatalogType, string[]> = {
+  person: ["role", "organization", "groups", "crm_url"],
+  group: ["purpose", "members", "owned_resources", "owned_deployments"],
   resource: [
     "resource_type",
     "provider",
     "deployment_profiles",
     "lifecycle_status",
-    "accountable_owner",
+    "accountable_owners",
     "provider_observed_at",
   ],
   credential: [
@@ -52,7 +70,7 @@ const columns: Record<CatalogType, string[]> = {
     "provider",
     "lifecycle_status",
     "resources",
-    "accountable_owner",
+    "accountable_owners",
   ],
 };
 export function filterCatalog(
@@ -66,8 +84,9 @@ export function filterCatalog(
     .split(/\s+/)
     .filter(Boolean);
   const scalar = (page: PageSummary, key: string) => {
-    const value = page.properties?.[key];
-    return relationshipKeys.has(key) && Array.isArray(value)
+    const value = catalogValue(page, key, pages);
+    return (relationshipKeys.has(key) || key === "groups") &&
+      Array.isArray(value)
       ? value
           .map((id) => names.get(id) || "Unavailable in this publication")
           .join(", ")
@@ -80,8 +99,10 @@ export function filterCatalog(
         page.title,
         page.slug,
         page.summary,
+        ...groupsFor(page, pages).map((group) => group.title),
         ...Object.entries(p).map(([key, value]) =>
-          relationshipKeys.has(key) && Array.isArray(value)
+          (relationshipKeys.has(key) || key === "groups") &&
+          Array.isArray(value)
             ? value.map((id) => names.get(id) || "").join(" ")
             : propertyText(value),
         ),
@@ -91,15 +112,20 @@ export function filterCatalog(
       return (
         p.catalog_type === state.type &&
         terms.every((term) => searchable.includes(term)) &&
+        (!state.group ||
+          groupsFor(page, pages).some((group) => group.page === state.group)) &&
+        (!state.member || ids(page, "members").includes(state.member)) &&
         (!state.provider || p.provider === state.provider) &&
         (!state.lifecycle || p.lifecycle_status === state.lifecycle) &&
         (!state.deployment ||
           (Array.isArray(p.deployment_profiles) &&
             p.deployment_profiles.includes(state.deployment))) &&
         (!state.missingOwner ||
-          p.accountable_owner == null ||
-          p.accountable_owner === "" ||
-          (Array.isArray(p.accountable_owner) && !p.accountable_owner.length))
+          (!ids(page, "accountable_owners").length &&
+            (p.accountable_owner == null ||
+              p.accountable_owner === "" ||
+              (Array.isArray(p.accountable_owner) &&
+                !p.accountable_owner.length))))
       );
     })
     .sort((a, b) => {
@@ -108,7 +134,9 @@ export function filterCatalog(
       const av = key === "title" ? a.title : scalar(a, key),
         bv = key === "title" ? b.title : scalar(b, key);
       return (
-        (av.localeCompare(bv) || a.slug.localeCompare(b.slug)) *
+        ((key.startsWith("owned_")
+          ? Number(av) - Number(bv)
+          : av.localeCompare(bv)) || a.slug.localeCompare(b.slug)) *
         (descending ? -1 : 1)
       );
     });
@@ -159,15 +187,12 @@ export default function Catalog({
   const rows = matches.slice(state.offset, state.offset + 50);
   const fields = columns[state.type];
   return (
-    <section className="catalog-page" aria-label="Resource catalog">
+    <section
+      className="catalog-page"
+      aria-label={`${catalogLabels[state.type]} catalog`}
+    >
       <div className="page-eyebrow">PUBLISHED CATALOG</div>
-      <h1 className="page-title">
-        {state.type === "resource"
-          ? "Resources"
-          : state.type === "credential"
-            ? "Credentials"
-            : "Deployments"}
-      </h1>
+      <h1 className="page-title">{catalogLabels[state.type]}</h1>
       <p className="page-summary">
         Browse recorded properties and follow each page to its evidence. Dates
         describe observations and reviews, not publication time.
@@ -179,11 +204,7 @@ export default function Catalog({
             href={catalogHref({ type }, publication)}
             aria-current={type === state.type ? "page" : undefined}
           >
-            {type === "resource"
-              ? "Resources"
-              : type === "credential"
-                ? "Credentials"
-                : "Deployments"}
+            {catalogLabels[type]}
           </a>
         ))}
       </nav>
@@ -196,57 +217,109 @@ export default function Catalog({
             onChange={(event) => update({ query: event.target.value })}
           />
         </label>
-        <label>
-          Provider
-          <select
-            aria-label="Provider"
-            value={state.provider}
-            onChange={(event) => update({ provider: event.target.value })}
-          >
-            <option value="">All providers</option>
-            {options("provider").map((value) => (
-              <option key={value}>{value}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Deployment
-          <select
-            aria-label="Deployment"
-            value={state.deployment}
-            onChange={(event) => update({ deployment: event.target.value })}
-          >
-            <option value="">All deployments</option>
-            {state.deployment &&
-              !pages.some(
-                (page) =>
-                  page.page === state.deployment &&
-                  deploymentIds.has(page.page),
-              ) && (
-                <option value={state.deployment}>Unavailable deployment</option>
-              )}
-            {pages
-              .filter((page) => deploymentIds.has(page.page))
-              .map((page) => (
-                <option key={page.page} value={page.page}>
-                  {page.title}
-                </option>
-              ))}
-          </select>
-        </label>
-        <label>
-          Lifecycle
-          <select
-            aria-label="Lifecycle"
-            value={state.lifecycle}
-            onChange={(event) => update({ lifecycle: event.target.value })}
-          >
-            <option value="">All lifecycles</option>
-            {options("lifecycle_status").map((value) => (
-              <option key={value}>{value}</option>
-            ))}
-          </select>
-        </label>
+        {(state.type === "person" || state.type === "group") && (
+          <label>
+            {state.type === "person" ? "Group" : "Member"}
+            <select
+              aria-label={state.type === "person" ? "Group" : "Member"}
+              value={
+                (state.type === "person" ? state.group : state.member) || ""
+              }
+              onChange={(event) =>
+                update(
+                  state.type === "person"
+                    ? { group: event.target.value }
+                    : { member: event.target.value },
+                )
+              }
+            >
+              <option value="">
+                {state.type === "person" ? "All groups" : "All members"}
+              </option>
+              {(state.type === "person" ? state.group : state.member) &&
+                !pages.some(
+                  (page) =>
+                    page.page ===
+                    (state.type === "person" ? state.group : state.member),
+                ) && (
+                  <option
+                    value={state.type === "person" ? state.group : state.member}
+                  >
+                    Unavailable in this publication
+                  </option>
+                )}
+              {pages
+                .filter(
+                  (page) =>
+                    page.properties?.catalog_type ===
+                    (state.type === "person" ? "group" : "person"),
+                )
+                .sort((a, b) => a.title.localeCompare(b.title))
+                .map((page) => (
+                  <option key={page.page} value={page.page}>
+                    {page.title}
+                  </option>
+                ))}
+            </select>
+          </label>
+        )}
+        {state.type !== "person" && state.type !== "group" && (
+          <>
+            <label>
+              Provider
+              <select
+                aria-label="Provider"
+                value={state.provider}
+                onChange={(event) => update({ provider: event.target.value })}
+              >
+                <option value="">All providers</option>
+                {options("provider").map((value) => (
+                  <option key={value}>{value}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Deployment
+              <select
+                aria-label="Deployment"
+                value={state.deployment}
+                onChange={(event) => update({ deployment: event.target.value })}
+              >
+                <option value="">All deployments</option>
+                {state.deployment &&
+                  !pages.some(
+                    (page) =>
+                      page.page === state.deployment &&
+                      deploymentIds.has(page.page),
+                  ) && (
+                    <option value={state.deployment}>
+                      Unavailable deployment
+                    </option>
+                  )}
+                {pages
+                  .filter((page) => deploymentIds.has(page.page))
+                  .map((page) => (
+                    <option key={page.page} value={page.page}>
+                      {page.title}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label>
+              Lifecycle
+              <select
+                aria-label="Lifecycle"
+                value={state.lifecycle}
+                onChange={(event) => update({ lifecycle: event.target.value })}
+              >
+                <option value="">All lifecycles</option>
+                {options("lifecycle_status").map((value) => (
+                  <option key={value}>{value}</option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
         <label>
           Sort
           <select
@@ -264,17 +337,23 @@ export default function Catalog({
             ])}
           </select>
         </label>
-        <label className="catalog-checkbox">
-          <input
-            type="checkbox"
-            checked={state.missingOwner}
-            onChange={(event) => update({ missingOwner: event.target.checked })}
-          />
-          Missing owner
-        </label>
+        {state.type !== "person" && state.type !== "group" && (
+          <label className="catalog-checkbox">
+            <input
+              type="checkbox"
+              checked={state.missingOwner}
+              onChange={(event) =>
+                update({ missingOwner: event.target.checked })
+              }
+            />
+            Missing owner
+          </label>
+        )}
         <button
           onClick={() =>
             update({
+              group: "",
+              member: "",
               query: "",
               provider: "",
               deployment: "",
@@ -330,8 +409,8 @@ export default function Catalog({
                     {fields.map((key) => (
                       <td key={key}>
                         <PropertyDisplay
-                          name={key}
-                          value={page.properties?.[key]}
+                          name={key === "groups" ? "members" : key}
+                          value={catalogValue(page, key, pages)}
                           pages={pages}
                           publication={publication}
                         />
@@ -349,8 +428,14 @@ export default function Catalog({
                   <a href={pageHref(page.slug, publication)}>{page.title}</a>
                 </h2>
                 <p>
-                  {propertyText(page.properties?.provider)} ·{" "}
-                  {propertyText(page.properties?.lifecycle_status)}
+                  {state.type === "person" || state.type === "group" ? (
+                    page.summary
+                  ) : (
+                    <>
+                      {propertyText(page.properties?.provider)} ·{" "}
+                      {propertyText(page.properties?.lifecycle_status)}
+                    </>
+                  )}
                 </p>
                 <details>
                   <summary>Record properties</summary>
@@ -360,8 +445,8 @@ export default function Catalog({
                         <dt>{propertyLabel(key)}</dt>
                         <dd>
                           <PropertyDisplay
-                            name={key}
-                            value={page.properties?.[key]}
+                            name={key === "groups" ? "members" : key}
+                            value={catalogValue(page, key, pages)}
                             pages={pages}
                             publication={publication}
                           />

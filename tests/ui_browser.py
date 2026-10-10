@@ -75,6 +75,45 @@ def seed(request):
     publish()
     def control(action):
         nonlocal token
+        if action == '/directory':
+            request('PATCH', '/api/settings', {'rateLimits': {'enabled': False}}, admin)
+            run = create('ingestion_runs', {'key': 'browser-directory', 'status': 'staging', 'description': 'Synthetic people and groups'})
+            people = [create('pages', {'slug': 'directory-' + name.lower(), 'kind': 'entity'}) for name in ('Ada', 'Ben')]
+            group = create('pages', {'slug': 'directory-core', 'kind': 'entity'})
+            deployment = create('pages', {'slug': 'directory-service', 'kind': 'entity'})
+            def directory_revision(page, title, props):
+                linked = set()
+                rev = create('page_revisions', {'run': run['id'], 'page': page['id'], 'title': title,
+                    'summary': 'Synthetic directory fixture.', 'body': 'Synthetic directory. [needs verification]', 'properties': props})
+                for field in ('members', 'accountable_owners', 'backup_owners'):
+                    for target in props.get(field, []):
+                        # Ownership roles may share the same target; links are unique per revision.
+                        if target not in linked:
+                            create('page_links', {'page_revision': rev['id'], 'target': target})
+                            linked.add(target)
+                return rev
+            for person, name in zip(people, ('Ada', 'Ben')):
+                directory_revision(person, name, {'catalog_type': 'person', 'role': 'Engineer',
+                    'organization': 'Synthetic organization', 'crm_url': 'https://crm.example.com/#/people/' + person['id']})
+            group_revision = directory_revision(group, 'Core', {'catalog_type': 'group', 'purpose': 'Operate the synthetic service',
+                'members': [person['id'] for person in people]})
+            directory_revision(deployment, 'Directory service', {'catalog_type': 'deployment',
+                'accountable_owners': [group['id']], 'backup_owners': [group['id']]})
+            request('PATCH', '/api/collections/ingestion_runs/records/' + run['id'],
+                {'expected_revision': run['revision'], 'status': 'published'}, token)
+            state['directory'] = {'people': people, 'group': group, 'revision': group_revision}
+            return request('GET', '/api/collections/publications/records?sort=-sequence&perPage=1', token=token)['items'][0]
+        if action == '/directory-update':
+            directory = state['directory']
+            run = create('ingestion_runs', {'key': 'browser-directory-update', 'status': 'staging', 'description': 'Synthetic membership change'})
+            revision = create('page_revisions', {'run': run['id'], 'page': directory['group']['id'],
+                'base_revision': directory['revision']['id'], 'title': 'Core', 'summary': 'Synthetic membership change.',
+                'body': 'Synthetic membership update. [needs verification]', 'properties': {'catalog_type': 'group',
+                'purpose': 'Operate the synthetic service', 'members': [directory['people'][0]['id']]}})
+            create('page_links', {'page_revision': revision['id'], 'target': directory['people'][0]['id']})
+            request('PATCH', '/api/collections/ingestion_runs/records/' + run['id'],
+                {'expected_revision': run['revision'], 'status': 'published'}, token)
+            return request('GET', '/api/collections/publications/records?sort=-sequence&perPage=1', token=token)['items'][0]
         if action == '/catalog':
             request('PATCH', '/api/settings', {'rateLimits': {'enabled': False}}, admin)
             run = create('ingestion_runs', {'key': 'browser-catalog', 'status': 'staging', 'description': 'Synthetic property catalog'})

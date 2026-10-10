@@ -5,7 +5,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import Catalog, { catalogHref, catalogTypes, type CatalogState, type CatalogType } from "./Catalog";
+import Catalog, { catalogHref, catalogTypes, catalogLabels, type CatalogState, type CatalogType } from "./Catalog";
 import PropertiesPanel from "./Properties";
 import "./catalog.css";
 import ImagePreview from "./ImagePreview";
@@ -38,7 +38,7 @@ function route() {
     slug: path.startsWith("catalog/") || path === "welcome" || /^(sources|passages)\//.test(path) ? "" : safeDecode(path.replace(/^page\//, "")),
     welcome: path === "welcome",
     catalog: path.startsWith("catalog/"),
-    catalogState: { type: catalogTypes.includes(path.split("/")[1] as CatalogType) ? path.split("/")[1] as CatalogType : "resource", query: params.get("q") || "", provider: params.get("provider") || "", deployment: params.get("deployment") || "", lifecycle: params.get("lifecycle") || "", missingOwner: params.get("missingOwner") === "true", sort: params.get("sort") || "title", offset: Math.min(100000, Math.max(0, parseInt(params.get("offset") || "0", 10) || 0)) } as CatalogState,
+    catalogState: { type: catalogTypes.includes(path.split("/")[1] as CatalogType) ? path.split("/")[1] as CatalogType : "resource", query: params.get("q") || "", group: params.get("group") || "", member: params.get("member") || "", provider: params.get("provider") || "", deployment: params.get("deployment") || "", lifecycle: params.get("lifecycle") || "", missingOwner: params.get("missingOwner") === "true", sort: params.get("sort") || "title", offset: Math.min(100000, Math.max(0, parseInt(params.get("offset") || "0", 10) || 0)) } as CatalogState,
     topic: params.get("topic") || "",
     collection: path.startsWith("sources/") ? "sources" as const : path.startsWith("passages/") ? "passages" as const : "pages" as const,
     record: /^(sources|passages)\//.test(path) ? safeDecode(path.split("/")[1] || "") : "",
@@ -431,7 +431,7 @@ function Reader() {
         </div>
         <div ref={setEvidenceNavigation} className="evidence-navigation" hidden={current.collection === "pages"} />
         <div className="page-navigation" hidden={current.collection !== "pages"}>
-          <nav className="catalog-navigation" aria-label="Catalog navigation">{catalogTypes.map(type => <a key={type} href={catalogHref({ type }, pinned)} aria-current={current.catalog && current.catalogState.type === type ? "page" : undefined}>{type === "resource" ? "Resources" : type === "credential" ? "Credentials" : "Deployments"}</a>)}</nav>
+          <nav className="catalog-navigation" aria-label="Catalog navigation">{catalogTypes.map(type => <a key={type} href={catalogHref({ type }, pinned)} aria-current={current.catalog && current.catalogState.type === type ? "page" : undefined}>{catalogLabels[type]}</a>)}</nav>
           <nav className="topic-navigation" aria-label="Topics">
             {topicGroups.map(group => <a key={group.id} href={welcomeHref(group.id)} aria-current={welcoming && current.topic === group.id ? "page" : undefined}>
               <span>{group.title}</span><span className="topic-count">{group.pages.length}</span>

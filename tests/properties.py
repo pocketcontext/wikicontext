@@ -131,6 +131,36 @@ def main():
         create('page_revisions', {'run': archive['id'], 'page': target['id'], 'base_revision': target_rev['id'], 'title': 'Archived deployment', 'summary': 'Synthetic archive', 'body': '[needs verification]', 'archived': True})
         publish(archive, 400)
         assert len(query('SELECT id FROM publications')) == 3
+        # Groups own resources; membership and target classifications share the manifest.
+        person = create('pages', {'slug': 'synthetic-person', 'kind': 'entity'})
+        group = create('pages', {'slug': 'synthetic-core', 'kind': 'entity'})
+        staged = run('group-ownership')
+        person_rev = revision(staged, person, properties={'catalog_type': 'person'})
+        group_rev = revision(staged, group, properties={'catalog_type': 'group', 'members': [person['id']]})
+        owned = revision(staged, page, related['id'], {'catalog_type': 'resource', 'accountable_owners': [group['id']], 'backup_owners': [group['id']], 'accountable_owner': 'Legacy owner'})
+        link(group_rev, person)
+        link(owned, group)
+        publish(staged)
+        historical = query('SELECT manifest FROM publications ORDER BY sequence DESC LIMIT 1')[0]['manifest']
+        for key, target_page in [('members', group), ('accountable_owners', person), ('backup_owners', person)]:
+            staged = run('invalid-group-target-' + key)
+            subject, base = (group, group_rev) if key == 'members' else (page, owned)
+            draft = revision(staged, subject, base['id'], {'catalog_type': 'group' if key == 'members' else 'resource', key: [target_page['id']]})
+            link(draft, target_page)
+            publish(staged, 400)
+            assert query('SELECT manifest FROM publications ORDER BY sequence DESC LIMIT 1')[0]['manifest'] == historical
+        # Reclassifying only a target must also validate unchanged referring revisions.
+        for subject, base, catalog in [(person, person_rev, 'group'), (group, group_rev, 'person')]:
+            staged = run('invalid-reclassification-' + catalog)
+            revision(staged, subject, base['id'], {'catalog_type': catalog})
+            publish(staged, 400)
+        staged = run('invalid-members-source')
+        revision(staged, person, person_rev['id'], {'catalog_type': 'person', 'members': []}, expected=400)
+        # Membership can be revised without changing the historical group or owners.
+        staged = run('empty-group')
+        revision(staged, group, group_rev['id'], {'catalog_type': 'group', 'members': []})
+        publish(staged)
+        assert json.loads(query("SELECT properties FROM page_revisions WHERE id='%s'" % group_rev['id'])[0]['properties'])['members'] == [person['id']]
     print('PASS: revisioned properties, immutable history, conflict rollback, bounded metadata, property provenance and relationship graph')
 
 

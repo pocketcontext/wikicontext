@@ -52,7 +52,7 @@ immutable, while global BM25 scores can change with index growth. See
 Properties belong to immutable revisions, so publication, conflict checks, history
 and export select exactly the same values as the page body. Older revisions have
 empty properties. No migration classifies or rewrites existing wiki content.
-Use `catalog_type` (`resource`, `credential`, or `deployment`) on entity pages to
+Use `catalog_type` (`resource`, `credential`, `deployment`, `person`, or `group`) on entity pages to
 opt into the catalog reader. Other page kinds and uncategorized pages still work.
 
 `properties` is a JSON object of at most 64 lowercase snake_case keys (1–64 ASCII
@@ -69,6 +69,23 @@ negative with a separate observation property (for example `expiry_observation`)
 validates their targets against the complete resulting manifest, including when
 an unchanged page refers to a newly archived page. Each relationship target requires a `page_links` record for that revision,
 sharing the validated graph and backlinks with body wiki links.
+
+`members` is a relationship list from a `group` entity to `person` entities.
+`accountable_owners` and `backup_owners` are relationship lists to `group` entities.
+Targets must have the required catalog type in the resulting publication; changing
+or archiving a target must preserve validity for unchanged referring pages too.
+Nested groups are not supported. Person memberships and responsibilities through
+groups are derived from these links within the selected publication, not stored
+as a second membership list. Historical publications retain their own membership
+and ownership. Legacy scalar `accountable_owner` and `backup_owner` properties
+remain readable; agents adopt the plural relationships in reviewed new revisions.
+
+Person properties may include `role`, `organization` and `crm_url`; group properties
+may include `purpose`. CRM links refer to reviewed existing records; there is no
+automatic CRM synchronization. People pages are knowledge identities, not auth
+accounts. Group membership records accountability only: it grants no permissions,
+sends no notifications and changes no application access. The browser views are
+read-only; agents manage membership through ordinary revision publication.
 
 `property_evidence` maps existing property names to lists of citation marker
 strings, for example `{"provider_status":["1"],"lifecycle_status":["2"]}`.

@@ -77,8 +77,8 @@ history; run audit changes also record staging home fields, without copying page
 
 ## Catalog properties
 
-Keep a resource, credential or deployment as an `entity` page with stable identity.
-Add `properties.catalog_type` as `resource`, `credential`, or `deployment`. Read the
+Keep a resource, credential, deployment, person or group as an `entity` page with stable identity.
+Add `properties.catalog_type` as `resource`, `credential`, `deployment`, `person`, or `group`. Read the
 published revision and full supporting passages before preparing a replacement;
 copy forward still-valid properties and property evidence explicitly. Revisions do
 not merge omitted fields. Use normal staging, base revision checks and publication.
@@ -91,7 +91,7 @@ revision and exporter metadata keys are reserved. Use consistent types; ISO date
 are strings. Distinguish unknown/null, confirmed absence and missing observations.
 
 Use `provider`, `provider_account`, `provider_id`, `exact_name`, `jurisdiction`,
-`accountable_owner`, `backup_owner`, `lifecycle_status`, `provider_status`,
+`lifecycle_status`, `provider_status`,
 `provider_observed_at`, `consumer_verification`, and `next_review` as applicable.
 Credential metadata may include `permission_groups`, `scope`, `expires_at`,
 `expiry_observation` and `secret_reference`. Never include secret values: every
@@ -102,6 +102,28 @@ Relationship keys `deployment_profiles`, `applications`, `resources`, `credentia
 `consumers`, `replaces`, `replaced_by` contain arrays of actual queried page IDs.
 Targets must be published and unarchived in the resulting publication. Create
 a matching page_links record for every relationship target, as for body wiki links.
+
+For people, reuse existing entity identities after reviewing their published
+revisions and source evidence. Suggested fields are `role`, `organization` and
+`crm_url`; use an actual verified CRM reader link, not an inferred record ID.
+For groups, use `purpose` and `members`, an array of person page IDs. Membership
+is stored only on the group: derive a person's groups from the selected
+publication. Nested groups are unsupported.
+
+Use `accountable_owners` and `backup_owners` as arrays of group page IDs. These
+and `members` require matching `page_links` records and correctly typed targets
+in the resulting publication. Stage new people, the group and owned resources
+in the same run when needed. Reclassifying or archiving a referenced page also
+requires resolving its incoming relationships. Preserve unrelated properties,
+evidence and links when replacing revisions. Legacy `accountable_owner` and
+`backup_owner` scalar text remains readable; adopt group relationships only
+after reviewing the assignment, rather than treating old text as a person ID.
+
+People and group catalog views are read-only. Membership and ownership are
+accountability metadata, not auth identities, access grants or notification
+recipients. Do not provision users, change permissions, send messages or perform
+automatic CRM synchronization as part of membership maintenance. Historical
+memberships and derived responsibilities use that publication's revisions.
 
 Create ordinary citations, then map property names to their marker strings in
 `property_evidence`, such as `{"provider_status":["1"]}`. Each mapping must name

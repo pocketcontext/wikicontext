@@ -180,6 +180,7 @@ def search(cfg, term, *, publication_id=None, sequence=None, limit=20, offset=0,
 def lint(cfg):
     publication, pages = published(cfg)
     incoming = {page['page']: 0 for page in pages}
+    catalogs = {page['page']: props.read(page)[0].get('catalog_type') for page in pages}
     findings = []
     links_by_revision, cited = {}, {}
     if publication:
@@ -190,6 +191,10 @@ def lint(cfg):
     for page in pages:
         links = links_by_revision.get(page['id'], [])
         properties, evidence = props.read(page)
+        for key, catalog in props.TARGET_CATALOGS.items():
+            for target in properties.get(key, []):
+                if target in catalogs and catalogs[target] != catalog:
+                    findings.append({'page': page['slug'], 'kind': 'invalid-property-target', 'property': key, 'target': target})
         property_targets = {target for key, values in properties.items() if key in props.RELATIONSHIPS for target in values}
         links = links + [{'target': target} for target in sorted(property_targets - {link['target'] for link in links})]
         for key, markers in evidence.items():

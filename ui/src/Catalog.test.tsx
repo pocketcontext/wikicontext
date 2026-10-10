@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import Catalog, {
   catalogHref,
   filterCatalog,
@@ -8,6 +8,7 @@ import Catalog, {
 import PropertiesPanel, { propertyText } from "./Properties";
 import { classifyWelcomePage } from "./welcome";
 import type { PageDetail, PageSummary } from "./types";
+afterEach(cleanup);
 const deployment: PageSummary = {
   id: "dep-revision",
   page: "dep-id",
@@ -174,5 +175,146 @@ describe("published property catalogs", () => {
     expect(
       screen.getAllByRole("link", { name: "Bucket 00" })[0],
     ).toHaveAttribute("href", "#/page/bucket-0?publication=history");
+  });
+});
+
+const ada: PageSummary = {
+  ...deployment,
+  id: "ada-rev",
+  page: "ada",
+  slug: "ada",
+  title: "Ada",
+  properties: {
+    catalog_type: "person",
+    role: "Engineer",
+    organization: "Example",
+    crm_url: "https://crm.example/ada",
+  },
+};
+const ben: PageSummary = {
+  ...ada,
+  id: "ben-rev",
+  page: "ben",
+  slug: "ben",
+  title: "Ben",
+};
+const core: PageSummary = {
+  ...deployment,
+  page: "core",
+  slug: "core",
+  title: "Core",
+  properties: {
+    catalog_type: "group",
+    purpose: "Operations",
+    members: [ada.page, ben.page],
+  },
+};
+const owned: PageSummary = {
+  ...deployment,
+  properties: {
+    catalog_type: "deployment",
+    accountable_owners: [core.page],
+    backup_owners: [core.page],
+  },
+};
+const directory = [ada, ben, core, owned];
+
+describe("people and groups", () => {
+  it("places classified identities in the people topic regardless of their titles", () => {
+    expect(classifyWelcomePage(ada)).toBe("people-relationships");
+    expect(classifyWelcomePage(core)).toBe("people-relationships");
+  });
+  it("derives membership from only the supplied publication and searches group names", () => {
+    expect(
+      filterCatalog(directory, {
+        ...state,
+        type: "person",
+        group: core.page,
+        query: "core",
+      }),
+    ).toEqual([ada, ben]);
+    const later = directory.map((page) =>
+      page.page === core.page
+        ? { ...core, properties: { ...core.properties, members: [ada.page] } }
+        : page,
+    );
+    expect(
+      filterCatalog(later, { ...state, type: "person", group: core.page }),
+    ).toEqual([ada]);
+    expect(
+      filterCatalog(directory, { ...state, type: "group", member: ben.page }),
+    ).toEqual([core]);
+    expect(
+      filterCatalog(later, { ...state, type: "group", member: ben.page }),
+    ).toEqual([]);
+    expect(
+      catalogHref({ type: "person", group: "core", offset: 50 }, "old"),
+    ).toBe("#/catalog/person?publication=old&group=core&offset=50");
+  });
+  it("recognizes group ownership while retaining legacy ownership", () => {
+    expect(
+      filterCatalog(directory, {
+        ...state,
+        type: "deployment",
+        missingOwner: true,
+      }),
+    ).toEqual([]);
+    expect(
+      filterCatalog(
+        [
+          {
+            ...owned,
+            properties: {
+              catalog_type: "deployment",
+              accountable_owner: "Legacy owner",
+            },
+          },
+        ],
+        { ...state, type: "deployment", missingOwner: true },
+      ),
+    ).toEqual([]);
+  });
+  it("shows distinct group-owned counts and pinned membership links", () => {
+    render(
+      <Catalog
+        pages={directory}
+        state={{ ...state, type: "group" }}
+        publication="old"
+      />,
+    );
+    const row = screen.getByRole("row", {
+      name: /Core Operations Ada Ben 0 1/,
+    });
+    expect(row).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Ada" })[0]).toHaveAttribute(
+      "href",
+      "#/page/ada?publication=old",
+    );
+    expect(screen.getByLabelText("Member")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Provider")).not.toBeInTheDocument();
+  });
+  it("shows inherited responsibilities and safe CRM links without granting permissions", () => {
+    render(
+      <PropertiesPanel
+        page={{ ...ada, body: "", citations: [], links: [], backlinks: [] }}
+        pages={directory}
+        publication="old"
+        onCitation={() => {}}
+      />,
+    );
+    expect(
+      screen.getByRole("heading", { name: "Responsibilities through groups" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "North cluster" })).toHaveLength(
+      2,
+    );
+    expect(screen.getByRole("link", { name: "Core" })).toHaveAttribute(
+      "href",
+      "#/page/core?publication=old",
+    );
+    expect(screen.getByRole("link", { name: "CRM record" })).toHaveAttribute(
+      "rel",
+      "noopener noreferrer",
+    );
   });
 });
