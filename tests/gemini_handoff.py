@@ -132,7 +132,7 @@ def check_pipeline(args,pipeline):
             _,_,token=credentials(request)
             cfg={'url':request.base_url,'email':'agent@example.com','password':'SyntheticUserPassword123!'}
             wc.save_session(cfg,{'url':cfg['url'],'email':cfg['email'],'token':token})
-            with patch.object(ingest,'transcribe',side_effect=AssertionError('Unexpected provider request')):
+            with patch.object(ingest,'prepare_audio',side_effect=AssertionError('Unexpected conversion')):
                 original_must=wc.must
                 def interrupted(cfg,method,url,body=None):
                     if url==wc.records('passages') and body['locator'].startswith('annotation'):
@@ -241,7 +241,7 @@ def check_pipeline(args,pipeline):
             assert alternate.returncode==0,alternate.stderr
             alternate_manifest=Path(json.loads(alternate.stdout)['manifest_path'])
             published_before=ingest.rows(cfg,'SELECT id, manifest FROM publications')
-            with patch.object(ingest,'transcribe',side_effect=AssertionError('Unexpected provider request')):
+            with patch.object(ingest,'prepare_audio',side_effect=AssertionError('Unexpected conversion')):
                 other_result=ingest.ingest(cfg,audio,audio_storage='original',transcript_bundle=alternate_manifest,version='gemini-alternate')
             assert other_result['source']==result['source']
             assert other_result['bundle_rendition']!=result['bundle_rendition']

@@ -509,7 +509,7 @@ def run(args):
         from . import ingest
         result = ingest.ingest(cfg, args.path, title=args.title, version=args.version,
                                audio_storage=args.audio_storage, image_review=args.image_review,
-                               transcript_bundle=args.transcript_bundle, audio_provider=args.audio_provider,
+                               transcript_bundle=args.transcript_bundle,
                                pipeline=args.pipeline, language=args.language,
                                translation_language=args.translation_language, resume=args.resume)
         say(dump(result, args.pretty), sys.stdout)
@@ -674,8 +674,6 @@ def parse(argv):
                         help='reviewed image passages and provenance JSON; required for PNG/JPEG/WebP')
     source.add_argument('--audio-storage', choices=('normalized', 'original'), default='normalized',
                         help='store normalized Opus audio (default), or preserve input bytes')
-    source.add_argument('--audio-provider', choices=('gemini', 'groq'), default='gemini',
-                        help='Audio transcription provider (default: Gemini); Groq is the explicit legacy route.')
     source.add_argument('--pipeline', choices=('standard', 'long-decode'), default='standard',
                         help='Gemini generation pipeline (default: standard); no automatic fallback.')
     source.add_argument('--language', help='Expected source language; transcript remains in its original language.')

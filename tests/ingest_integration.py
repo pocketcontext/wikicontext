@@ -8,9 +8,7 @@ import os
 from pathlib import Path
 import sys
 import tempfile
-import shutil
 import subprocess
-import wave
 import urllib.error
 import urllib.request
 from unittest.mock import patch
@@ -69,41 +67,6 @@ def main():
             real_must(cfg, 'PATCH', wc.records('ingestion_runs', run['id']), {'expected_revision': 1, 'status': 'published'})
             assert len(ingest.rows(cfg, 'SELECT id FROM publications')) == 1
             assert source.read_bytes() == content
-            if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
-                raise AssertionError('FFmpeg and ffprobe are required for normalized-audio integration coverage')
-            audio = Path(folder) / 'synthetic-meeting.wav'
-            with wave.open(str(audio), 'wb') as fixture:
-                fixture.setnchannels(2)
-                fixture.setsampwidth(2)
-                fixture.setframerate(48000)
-                fixture.writeframes(b'\0' * 48000 * 2 * 2)
-            original_audio = audio.read_bytes()
-            sent = []
-            def provider(audio_path, original_duration):
-                sent.append(audio_path.read_bytes())
-                if len(sent) == 1:
-                    raise wc.Fail(1, 'synthetic provider failure')
-                return [{'locator': 'seconds 0-1', 'body': 'Synthetic meeting transcript.'}]
-            with patch.object(ingest, 'send_transcription', side_effect=provider), \
-                    patch.dict(os.environ, {'WIKICONTEXT_GROQ_API_KEY': 'synthetic-key'}):
-                try:
-                    ingest.ingest(cfg, audio, audio_provider='groq')
-                except wc.Fail as error:
-                    assert str(error) == 'synthetic provider failure', str(error)
-                else:
-                    raise AssertionError('Expected synthetic provider failure')
-                normalized = ingest.ingest(cfg, audio, audio_provider='groq')
-                assert normalized == ingest.ingest(cfg, audio, audio_provider='groq')
-            assert len(sent) == 2 and sent[0] == sent[1]
-            assert audio.read_bytes() == original_audio
-            stored_audio = ingest.rows(cfg, "SELECT id, original, original_name, sha256 FROM sources WHERE id = '%s'" % normalized['source'])[0]
-            assert stored_audio['original_name'] == 'synthetic-meeting.normalized.ogg'
-            assert stored_audio['sha256'] == hashlib.sha256(sent[0]).hexdigest()
-            assert len(ingest.rows(cfg, 'SELECT id FROM sources')) == 2
-            file_token = request('POST', '/api/files/token', {}, token)['token']
-            audio_file_path = '/api/files/sources/' + stored_audio['id'] + '/' + stored_audio['original']
-            with urllib.request.urlopen(request.base_url + audio_file_path + '?token=' + file_token) as response:
-                assert response.read() == sent[0]
             # Reviewed images retain exact originals, supplement an existing source,
             # and enter the same citation/publication/export contract as text.
             from PIL import Image, ImageDraw
@@ -171,7 +134,7 @@ def main():
                     raise AssertionError('Anonymous image download succeeded')
                 with urllib.request.urlopen(image_url + '?token=' + file_token) as response:
                     assert response.read() == original
-            assert len(ingest.rows(cfg, 'SELECT id FROM sources')) == 5
+            assert len(ingest.rows(cfg, 'SELECT id FROM sources')) == 4
             image_run = real_must(cfg, 'POST', wc.records('ingestion_runs'), {
                 'key': 'reviewed-image-fixture', 'description': 'Synthetic reviewed images',
                 'status': 'staging', 'sources': [s['id'] for s in image_sources]})
@@ -198,7 +161,7 @@ def main():
             assert private['sha256'] == result['sha256']
             assert ingest.ingest(cfg, source)['source'] == result['source']
             assert ingest.ingest(private_cfg, source)['source'] == private['source']
-    print('PASS: original/hash/dedup/retry, protected downloads, cited publication/export, normalized audio recovery, PNG/JPEG/WebP reviewed evidence and conflicts')
+    print('PASS: original/hash/dedup/retry, protected downloads, cited publication/export, PNG/JPEG/WebP reviewed evidence and conflicts')
 
 
 if __name__ == '__main__':

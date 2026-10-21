@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Synthetic ingestion recovery tests; never call Groq or production APIs."""
+"""Synthetic ingestion recovery tests; never call providers or production APIs."""
 import hashlib
 import copy
 import importlib.util
@@ -94,20 +94,6 @@ class IngestionTests(unittest.TestCase):
         self.assertEqual(''.join(p['body'] for p in self.store.tables['passages']), source.read_text())
         self.assertEqual(completed['status'], 'extracted')
 
-    def test_provider_failure_preserves_original_then_cached_resume(self):
-        source = self.source('meeting.wav', b'synthetic audio fixture')
-        with patch.object(ingest, 'transcribe', side_effect=ingest.wc.Fail(1, 'provider unavailable')):
-            with self.assertRaises(ingest.wc.Fail):
-                ingest.ingest(self.cfg, source, audio_storage='original', audio_provider='groq')
-        self.assertEqual(len(self.store.tables['sources']), 1)
-        self.assertEqual(len(self.store.tables['renditions']), 0)
-        transcript = [{'locator': 'seconds 0-1', 'body': 'Synthetic transcript.'}]
-        with patch.object(ingest, 'transcribe', return_value=transcript) as provider:
-            ingest.ingest(self.cfg, source, audio_storage='original', audio_provider='groq')
-            ingest.ingest(self.cfg, source, audio_storage='original', audio_provider='groq')
-            self.assertEqual(provider.call_count, 1)
-        self.assertEqual(source.read_bytes(), b'synthetic audio fixture')
-
     def audio_source(self):
         path = self.root / 'synthetic-meeting.wav'
         with wave.open(str(path), 'wb') as audio:
@@ -116,14 +102,6 @@ class IngestionTests(unittest.TestCase):
             audio.setframerate(48000)
             audio.writeframes(b'\0' * 48000 * 2 * 2)
         return path
-
-    def test_normalization_failure_never_uploads(self):
-        path = self.source('broken.wav', b'synthetic invalid audio')
-        with patch.object(ingest, 'prepare_audio', side_effect=ingest.wc.Fail(1, 'normalization failed')):
-            with self.assertRaises(ingest.wc.Fail):
-                ingest.ingest(self.cfg, path, audio_provider='groq')
-        self.assertFalse(self.store.tables['sources'])
-        self.assertEqual(path.read_bytes(), b'synthetic invalid audio')
 
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg required')
     def test_selected_audio_duration_ignores_longer_video_and_other_audio(self):
@@ -174,40 +152,21 @@ class IngestionTests(unittest.TestCase):
                     ingest.duration(self.root / 'unused.webm')
 
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg required')
-    def test_normalized_upload_provider_bytes_and_retry(self):
+    def test_normalized_audio_bytes_and_provenance(self):
         path = self.audio_source()
         original = path.read_bytes()
-        sent = []
-        def provider(audio_path, original_duration):
-            sent.append(audio_path.read_bytes())
-            self.assertAlmostEqual(original_duration, 1, delta=0.1)
-            if len(sent) == 1:
-                raise ingest.wc.Fail(1, 'synthetic provider failure')
-            return [{'locator': 'seconds 0-1', 'body': 'Synthetic transcript.'}]
-        with patch.object(ingest, 'send_transcription', side_effect=provider), \
-                patch.dict(os.environ, {'WIKICONTEXT_GROQ_API_KEY': 'synthetic-key'}):
-            with self.assertRaises(ingest.wc.Fail):
-                ingest.ingest(self.cfg, path, audio_provider='groq')
-            self.assertEqual(len(self.store.tables['sources']), 1)
-            result = ingest.ingest(self.cfg, path, audio_provider='groq')
-            self.assertEqual(result, ingest.ingest(self.cfg, path, audio_provider='groq'))
-        self.assertEqual(len(sent), 2)
-        stored = self.store.tables['sources'][0]
-        self.assertEqual(stored['original_name'], 'synthetic-meeting.normalized.ogg')
-        self.assertEqual(sent, [stored['content'], stored['content']])
-        self.assertEqual(result['sha256'], hashlib.sha256(sent[0]).hexdigest())
+        content, provenance = ingest.prepare_audio(self.cfg, path)
         self.assertEqual(path.read_bytes(), original)
-        provenance = json.loads(self.store.tables['renditions'][0]['notes'])['audio']
         self.assertEqual(provenance['input_sha256'], hashlib.sha256(original).hexdigest())
         self.assertEqual(provenance['input_name'], path.name)
-        self.assertEqual(provenance['stored_sha256'], result['sha256'])
+        self.assertEqual(provenance['stored_sha256'], hashlib.sha256(content).hexdigest())
         self.assertEqual(provenance['storage'], 'normalized')
         self.assertEqual(provenance['channels'], 1)
         self.assertEqual(provenance['sample_rate'], 16000)
         self.assertEqual(provenance['bitrate'], 16000)
         self.assertEqual(provenance['codec'], 'opus')
         stored_path = self.root / 'stored.ogg'
-        stored_path.write_bytes(sent[0])
+        stored_path.write_bytes(content)
         inspected = json.loads(ingest.command(['ffprobe', '-v', 'error', '-show_streams', '-of', 'json', str(stored_path)]))
         stream = inspected['streams'][0]
         self.assertEqual(stream['codec_name'], 'opus')
@@ -216,20 +175,6 @@ class IngestionTests(unittest.TestCase):
         self.assertEqual(tags['wikicontext_input_sha256'], provenance['input_sha256'])
         self.assertEqual(tags['wikicontext_audio_profile'], provenance['profile'])
         self.assertEqual(tags['wikicontext_converter'], provenance['converter'])
-
-    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg required')
-    def test_normalization_precedes_source_size_gate(self):
-        path = self.audio_source()
-        normalized, provenance = ingest.prepare_audio(self.cfg, path)
-        self.assertLess(len(normalized), path.stat().st_size)
-        transcript = [{'locator': 'seconds 0-1', 'body': 'Synthetic transcript.'}]
-        with patch.object(ingest, 'MAX_SOURCE', len(normalized) + 1), \
-                patch.object(ingest, 'send_transcription', return_value=transcript), \
-                patch.dict(os.environ, {'WIKICONTEXT_GROQ_API_KEY': 'synthetic-key'}):
-            ingest.ingest(self.cfg, path, audio_provider='groq')
-            with self.assertRaises(ingest.wc.Fail):
-                ingest.ingest(self.cfg, path, audio_storage='original', audio_provider='groq')
-        self.assertEqual(len(self.store.tables['sources']), 1)
 
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg required')
     def test_audio_cache_and_fresh_cache_determinism(self):
@@ -254,41 +199,17 @@ class IngestionTests(unittest.TestCase):
         cached = next((self.root / 'cache/wikicontext/audio').glob('*/audio.ogg'))
         cached.write_bytes(b'tampered audio')
         with self.assertRaises(ingest.wc.Fail):
-            ingest.ingest(self.cfg, path, audio_provider='groq')
-        self.assertFalse(self.store.tables['sources'])
+            ingest.prepare_audio(self.cfg, path)
 
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg required')
-    def test_default_duration_mismatch_and_size_limit_prevent_upload(self):
+    def test_default_duration_mismatch_and_size_limit_are_rejected(self):
         path = self.audio_source()
         with patch.object(ingest, 'duration', side_effect=[10.0, 7.0]):
             with self.assertRaises(ingest.wc.Fail):
-                ingest.ingest(self.cfg, path, audio_provider='groq')
-        self.assertFalse(self.store.tables['sources'])
+                ingest.prepare_audio(self.cfg, path)
         with patch.object(ingest, 'MAX_AUDIO', 1):
             with self.assertRaises(ingest.wc.Fail):
-                ingest.ingest(self.cfg, path, audio_provider='groq')
-        self.assertFalse(self.store.tables['sources'])
-
-    @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg required')
-    def test_audio_partial_passages_resume_after_rename_and_fresh_cache(self):
-        path = self.audio_source()
-        transcript = [{'locator': 'seconds 0-0.5', 'body': 'Synthetic first passage.'},
-                      {'locator': 'seconds 0.5-1', 'body': 'Synthetic second passage.'}]
-        with patch.object(ingest, 'send_transcription', return_value=transcript), \
-                patch.dict(os.environ, {'WIKICONTEXT_GROQ_API_KEY': 'synthetic-key'}):
-            self.store.fail_ordinal = 2
-            with self.assertRaises(ingest.wc.Fail):
-                ingest.ingest(self.cfg, path, audio_provider='groq')
-            self.assertEqual(len(self.store.tables['passages']), 1)
-            original_notes = self.store.tables['renditions'][0]['notes']
-            renamed = self.root / 'renamed.wav'
-            renamed.write_bytes(path.read_bytes())
-            self.store.fail_ordinal = None
-            result = ingest.ingest({**self.cfg, 'email': 'new-machine@example.test'}, renamed, audio_provider='groq')
-        self.assertEqual(result['passages'], 2)
-        self.assertEqual(len(self.store.tables['sources']), 1)
-        self.assertEqual(len(self.store.tables['renditions']), 1)
-        self.assertEqual(self.store.tables['renditions'][0]['notes'], original_notes)
+                ingest.prepare_audio(self.cfg, path)
 
     def test_unsupported_and_scanned_pdf_never_claim_completion(self):
         with self.assertRaises(ingest.wc.Fail):
@@ -501,18 +422,6 @@ class IngestionTests(unittest.TestCase):
         self.assertEqual(provenance['sequence'], 2)
         self.assertEqual(provenance['notes'], review['notes'])
         self.assertNotIn('supersedes', self.store.tables['sources'][-1])
-
-    def test_missing_groq_key_no_provider_request(self):
-        with patch.dict(os.environ, {}, clear=True), patch.object(ingest.wc.opener, 'open') as request:
-            with self.assertRaises(ingest.wc.Fail):
-                ingest.transcribe(self.source('meeting.wav', b'fixture'))
-            request.assert_not_called()
-
-    def test_audio_duration_mismatch_prevents_upload(self):
-        with patch.dict(os.environ, {'WIKICONTEXT_GROQ_API_KEY': 'synthetic-key'}), patch.object(ingest, 'duration', side_effect=[10.0, 7.0]), patch.object(ingest, 'command'), patch.object(ingest.wc.opener, 'open') as request:
-            with self.assertRaises(ingest.wc.Fail):
-                ingest.transcribe(self.source('meeting.wav', b'fixture'))
-            request.assert_not_called()
 
 
 if __name__ == '__main__':

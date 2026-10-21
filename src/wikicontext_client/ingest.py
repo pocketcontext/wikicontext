@@ -178,52 +178,12 @@ def prepare_audio(cfg, path, *, profile=AUDIO_PROFILE, sample_rate=16000, bitrat
             return content, provenance
 
 
-def transcribe(path, normalized=False):
-    if not wc.hide(os.environ.get('WIKICONTEXT_GROQ_API_KEY')):
-        raise wc.Fail(2, 'Set WIKICONTEXT_GROQ_API_KEY to transcribe audio; uploaded source remains stored.')
-    if normalized:
-        return send_transcription(path, duration(path))
-    with tempfile.TemporaryDirectory(prefix='wikicontext-audio-') as folder:
-        derivative = Path(folder) / 'audio.ogg'
-        original_duration = convert_audio(path, derivative)
-        return send_transcription(derivative, original_duration)
-
-
-def send_transcription(path, original_duration):
-    key = wc.hide(os.environ.get('WIKICONTEXT_GROQ_API_KEY'))
-    if not key:
-        raise wc.Fail(2, 'Set WIKICONTEXT_GROQ_API_KEY to transcribe audio; uploaded source remains stored.')
-    if not 0 < path.stat().st_size <= MAX_AUDIO:
-        raise wc.Fail(2, 'Transcription audio must be nonempty and no larger than 25 MB.')
-    body, media = multipart({'model': 'whisper-large-v3-turbo', 'response_format': 'verbose_json', 'timestamp_granularities[]': 'segment'}, 'file', 'audio.ogg', path.read_bytes(), 'audio/ogg')
-    request = urllib.request.Request('https://api.groq.com/openai/v1/audio/transcriptions', data=body,
-                                    headers={'Authorization': 'Bearer ' + key, 'Content-Type': media}, method='POST')
-    try:
-        with wc.opener.open(request, timeout=600) as response:
-            result = json.load(response)
-    except (OSError, ValueError):
-        raise wc.Fail(1, 'Groq transcription failed; uploaded source remains stored. Retry after checking provider availability and credentials.') from None
-    segments = result.get('segments') if isinstance(result, dict) else None
-    if not isinstance(segments, list) or not segments:
-        raise wc.Fail(1, 'Groq returned no timestamped segments; original remains stored.')
-    output = []
-    for segment in segments:
-        try:
-            start, end, body = float(segment['start']), float(segment['end']), segment['text']
-            if not math.isfinite(start) or not math.isfinite(end) or not 0 <= start <= end <= original_duration + 2 or not isinstance(body, str):
-                raise ValueError()
-        except (KeyError, TypeError, ValueError):
-            raise wc.Fail(1, 'Groq returned an invalid transcript segment; retry transcription.') from None
-        output.extend(chunks(body, f'seconds {start:.3f}-{end:.3f}'))
-    return output
-
-
 def chunks(text, locator):
     return [{'locator': f'{locator}; characters {offset + 1}-{min(offset + 24000, len(text))}', 'body': text[offset:offset + 24000]}
             for offset in range(0, len(text), 24000) if text[offset:offset + 24000].strip()]
 
 
-def extract(path, content, normalized=False):
+def extract(path, content):
     suffix = path.suffix.lower()
     if suffix in TEXT or not suffix:
         try:
@@ -236,14 +196,12 @@ def extract(path, content, normalized=False):
         for number, page in enumerate(output.split('\f'), 1):
             passages.extend(chunks(page, f'page {number}'))
         return 'text', 'pdftotext / wikicontext-1', passages
-    if suffix in AUDIO:
-        return 'transcript', 'groq/whisper-large-v3-turbo / wikicontext-1', transcribe(path, normalized=normalized)
     raise wc.Fail(2, f'Unsupported source extension {suffix or "(none)"}; original stored, extraction incomplete. Supply a supported source or explicitly prepare a rendition.')
 
 
-def ingest(cfg, path, title=None, version='v1', audio_storage='normalized', image_review=None, transcript_bundle=None, audio_provider='gemini', pipeline='standard', language=None, translation_language=None, resume=None, gemini_executable=None):
+def ingest(cfg, path, title=None, version='v1', audio_storage='normalized', image_review=None, transcript_bundle=None, pipeline='standard', language=None, translation_language=None, resume=None, gemini_executable=None):
     if transcript_bundle:
-        if resume or pipeline != 'standard' or language or translation_language or audio_provider != 'gemini' or gemini_executable:
+        if resume or pipeline != 'standard' or language or translation_language or gemini_executable:
             raise wc.Fail(2, '--transcript-bundle cannot use Gemini generation or provider options.')
         if image_review or audio_storage != 'original':
             raise wc.Fail(2, '--transcript-bundle requires --audio-storage original and cannot use --image-review.')
@@ -259,24 +217,15 @@ def ingest(cfg, path, title=None, version='v1', audio_storage='normalized', imag
     is_image = path.suffix.lower() in reviewed_image.EXTENSIONS
     if image_review and not is_image:
         raise wc.Fail(2, '--image-review requires a PNG, JPEG or WebP source.')
-    if audio_provider not in ('gemini', 'groq'):
-        raise wc.Fail(2, 'Audio provider must be gemini or groq.')
-    if path.suffix.lower() in AUDIO and audio_provider == 'gemini':
+    if path.suffix.lower() in AUDIO:
         from .audio_pipeline import ingest_audio
         return ingest_audio(cfg, path, title, version, audio_storage, pipeline, language,
                             translation_language, resume, gemini_executable)
     if resume or pipeline != 'standard' or language or translation_language:
         raise wc.Fail(2, 'Gemini workflow options require Gemini audio ingestion.')
-    normalized = path.suffix.lower() in AUDIO and audio_storage == 'normalized'
-    provenance = None
-    if normalized:
-        content, provenance = prepare_audio(cfg, path)
-        title = title or path.stem
-        path = path.with_name(path.stem + '.normalized.ogg')
-    else:
-        if path.stat().st_size > MAX_SOURCE:
-            raise wc.Fail(2, 'Source must be no larger than 100 MiB; audio can use --audio-storage normalized.')
-        content = path.read_bytes()
+    if path.stat().st_size > MAX_SOURCE:
+        raise wc.Fail(2, 'Source must be no larger than 100 MiB.')
+    content = path.read_bytes()
     if len(content) > MAX_SOURCE:
         raise wc.Fail(2, 'Source exceeds 100 MiB; no upload attempted.')
     if not content or content.startswith(b'version https://git-lfs.github.com/spec/v1\n'):
@@ -297,7 +246,7 @@ def ingest(cfg, path, title=None, version='v1', audio_storage='normalized', imag
     if source.get('sha256') != digest:
         raise wc.Fail(1, 'Server original checksum differs; stop and investigate before extraction.')
     # A complete immutable rendition can be reused even on a different machine.
-    kind_hint = 'image-review' if is_image else ('transcript' if path.suffix.lower() in AUDIO else 'text')
+    kind_hint = 'image-review' if is_image else 'text'
     completed = rows(cfg, 'SELECT id, notes FROM renditions WHERE source = ' + literal(source['id']) + ' AND kind = ' + literal(kind_hint) + ' AND version_label = ' + literal(version) + ' LIMIT 1')
     if completed and not is_image:
         try:
@@ -328,7 +277,7 @@ def ingest(cfg, path, title=None, version='v1', audio_storage='normalized', imag
         with tempfile.TemporaryDirectory(prefix='wikicontext-source-') as folder:
             snapshot = Path(folder) / ('source' + path.suffix.lower())
             snapshot.write_bytes(content)
-            kind, processor, passages = extract(snapshot, content, normalized=normalized)
+            kind, processor, passages = extract(snapshot, content)
         if not passages:
             raise wc.Fail(1, 'Extraction returned no text (scanned PDFs require OCR); original remains stored.')
         with tempfile.NamedTemporaryFile(mode='w', dir=base, delete=False) as handle:
@@ -336,8 +285,6 @@ def ingest(cfg, path, title=None, version='v1', audio_storage='normalized', imag
             json.dump([kind, processor, passages], handle, ensure_ascii=False)
         os.replace(handle.name, cache)
     manifest_data = {'passages': len(passages), 'sha256': hashlib.sha256(json.dumps(passages, sort_keys=True).encode()).hexdigest()}
-    if provenance:
-        manifest_data['audio'] = provenance
     if image_data:
         manifest_data['image'] = image_data
     manifest = json.dumps(manifest_data, sort_keys=True, ensure_ascii=False) if image_data else json.dumps(manifest_data, sort_keys=True)
@@ -356,15 +303,9 @@ def ingest(cfg, path, title=None, version='v1', audio_storage='normalized', imag
     else:
         rendition = existing[0]
     if rendition['notes'] != manifest:
-        # The same input may be renamed before a retry on another machine. Keep
-        # its first recorded name without treating that label as evidence identity.
         try:
-            previous_manifest = json.loads(rendition['notes'])
-            expected_manifest = json.loads(manifest)
-            if provenance and isinstance(previous_manifest.get('audio'), dict):
-                expected_manifest['audio']['input_name'] = previous_manifest['audio']['input_name']
-            compatible = previous_manifest == expected_manifest
-        except (ValueError, KeyError, TypeError, AttributeError):
+            compatible = json.loads(rendition['notes']) == json.loads(manifest)
+        except (ValueError, TypeError):
             compatible = False
         if not compatible:
             raise wc.Fail(4, 'Existing rendition has different extracted content. Preserve it and select a new --version.')

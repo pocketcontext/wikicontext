@@ -68,14 +68,14 @@ another provider request nor establish publication readiness.
 
 Read every transcript passage and the analysis/translation/uncertainty artifacts. Publish reviewed summaries separately from generated analysis. Stage a cited transcript and summary, then follow the Audio catalog workflow below. Return `extracted` as an intermediate state; only report ingestion complete after publication and verification.
 
-### Explicit legacy Groq route
+### Earlier Groq evidence
 
-`wikicontext ingest AUDIO --audio-provider groq` retains the old `WIKICONTEXT_GROQ_API_KEY` integration with `whisper-large-v3-turbo`, mono 16 kHz encoder input and 16 kbps Opus. Its transcription limit remains 25 MB. `--audio-storage original` stores input bytes and sends a temporary normalized derivative. The input is untouched; conversion provenance and exact cached bytes are retained. Existing Groq evidence remains immutable. Moving historical recordings to Gemini is separate authorized processing, not a migration performed by an upgrade.
+The former `--audio-provider groq` route has been removed. Existing Groq renditions (`groq/whisper-large-v3-turbo`) remain immutable evidence. Moving historical recordings to Gemini is separate authorized processing, not a migration performed by an upgrade.
 
 ## External transcript bundles
 
 Use this route when Gemini Transcribe has already processed the recording and its
-versioned evidence bundle must be preserved. It calls no Gemini/Groq service and
+versioned evidence bundle must be preserved. It calls no Gemini service and
 performs no normalization. Provider authorization belongs to the earlier generation
 step, not this import. No provider API key is needed. Local `ffprobe` (from
 FFmpeg) verifies the duration of a private snapshot before uploads.

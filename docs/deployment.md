@@ -52,7 +52,7 @@ bucket `wikicontext-files` for source originals. Set `LITESTREAM_BUCKET`,
 `WIKICONTEXT_S3_FORCE_PATH_STYLE` defaults to `true`.
 Use separate credentials for originals and replicas. Never reuse sibling replicas.
 Keep credentials only in the maintained `once-pocketcontext-v2` scaffold's private
-configuration. Groq transcription credentials belong to the ingestion agent.
+configuration. Gemini transcription credentials belong to the ingestion agent.
 
 The container requires both services and enables `WIKICONTEXT_RATE_LIMITS=true`.
 There is no replication-disabled or local-originals mode. Run the pinned server

@@ -74,7 +74,7 @@ Use nonempty explicit values, for example the provider's actual region rather th
 an omitted default. Both buckets must differ from both source buckets and from
 each other; their access-key identities must differ. `LITESTREAM_PATH` must be
 `rehearsals/REHEARSAL_UUID/data.db`. `BASE_URL` is derived from the selected host
-and loopback port. No Google, SMTP, Groq, superuser-provisioning or arbitrary extra
+and loopback port. No Google, SMTP, superuser-provisioning or arbitrary extra
 bindings are accepted. Persisted settings and copied account sessions must already
 have been sanitized by the preparation tool. Original-file contents must be
 copied to the independent clone bucket at their preserved keys before startup.

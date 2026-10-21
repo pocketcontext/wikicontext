@@ -44,7 +44,7 @@ class BundleTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name); self.audio, self.manifest, self.m = fixture(self.root)
         self.store = EvidenceStore(); self.cfg = {'url': 'http://example.invalid', 'email': 'synthetic@example.test'}
-        for p in [patch.object(ingest, 'rows', self.store.query), patch.object(ingest, 'upload_source', self.store.upload), patch.object(ingest.wc, 'must', self.store.create), patch.object(ingest.wc, 'space_id', return_value=SPACE), patch.object(ingest, 'transcribe', side_effect=AssertionError('No model calls'))]:
+        for p in [patch.object(ingest, 'rows', self.store.query), patch.object(ingest, 'upload_source', self.store.upload), patch.object(ingest.wc, 'must', self.store.create), patch.object(ingest.wc, 'space_id', return_value=SPACE), patch.object(ingest, 'prepare_audio', side_effect=AssertionError('No conversion'))]:
             p.start(); self.addCleanup(p.stop)
     def save(self): self.manifest.write_text(json.dumps(self.m))
     def run_import(self): return ingest.ingest(self.cfg, self.audio, transcript_bundle=self.manifest, audio_storage='original')

@@ -11,7 +11,7 @@ import urllib.request
 from unittest.mock import patch
 from wikicontext_client import cli as wc
 class Client(unittest.TestCase):
-    def test_tracing_excludes_groq_origin_and_request_contents(self):
+    def test_tracing_excludes_external_origin_and_request_contents(self):
         from observecontext_client.instrumentation import instrument_cli
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / 'events.jsonl'
@@ -26,7 +26,7 @@ class Client(unittest.TestCase):
             with patch.dict(os.environ, {'OBSERVECONTEXT_CAPTURE_V1': json.dumps(config)}), \
                     patch('urllib.request.OpenerDirector.open', side_effect=response), \
                     instrument_cli(service='wikicontext.client', opener=wc.opener):
-                for url in ('https://api.groq.com/openai/v1/audio/transcriptions',
+                for url in ('https://generativelanguage.googleapis.com/upload/v1beta/files',
                             'https://wiki.example.com/api/collections/sources/records'):
                     request = urllib.request.Request(url, data=b'private original bytes',
                         headers={'Authorization': 'private-token'})
@@ -43,7 +43,6 @@ class Client(unittest.TestCase):
                          '--translation-language', 'English', '--resume', '/private/workflow.json'])
         with patch.object(wc, 'config', return_value={}), patch.object(ingest, 'ingest', return_value={}) as call, patch.object(wc, 'say'):
             wc.run(args)
-        self.assertEqual(call.call_args.kwargs['audio_provider'], 'gemini')
         self.assertEqual(call.call_args.kwargs['pipeline'], 'standard')
         self.assertEqual(call.call_args.kwargs['language'], 'Italian')
         self.assertEqual(call.call_args.kwargs['translation_language'], 'English')
