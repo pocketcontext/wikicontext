@@ -18,7 +18,7 @@ The executable `wikicontext` beside this file is a standalone uv launcher. Insta
 
 ## Identity and safety
 
-Use the existing default `users` identity. Set `WIKICONTEXT_URL` and `WIKICONTEXT_USER_EMAIL`, then use `wikicontext login --google` or `WIKICONTEXT_USER_PASSWORD`. Ask for missing configuration; never search unrelated files for secrets. Use ordinary user credentials, never superuser credentials for knowledge work. Immutable records are edited by publishing new revisions.
+Use the existing default `users` identity. Set `WIKICONTEXT_URL` and `WIKICONTEXT_USER_EMAIL`, then use `wikicontext login --google` or `WIKICONTEXT_USER_PASSWORD`. `login --google` opens the default browser itself; run it in the background or with a tool timeout longer than its wait (180 seconds by default). If its output says `Browser not opened`, open the printed URL in the user's default browser with the OS opener; never drive or automate the browser. Wait for the command to finish, then run `whoami`. Over SSH, see the sign-in steps in [references/workflows.md](references/workflows.md#sign-in). Ask for missing configuration; never search unrelated files for secrets. Use ordinary user credentials, never superuser credentials for knowledge work. Immutable records are edited by publishing new revisions.
 
 ## Spaces
 

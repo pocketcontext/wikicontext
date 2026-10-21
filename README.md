@@ -123,7 +123,7 @@ Do not commit `ui/dist` or browser test output.
 The standalone launcher `skills/wikicontext/wikicontext` requires Python 3.11+ and [uv](https://docs.astral.sh/uv/). Add its directory to `PATH` to use the commands below. Its first run installs the client from a pinned Git revision. For development and validation, install the current package in a virtual environment with `python3 -m pip install .`. Release the tested package commit first, then update the launcher to that full commit and verify the copied launcher through uv. The package pins its ObserveContext instrumentation dependency separately.
 
 
-Install with `npx skills add pocketcontext/wikicontext --skill wikicontext`, or copy `skills/wikicontext/` to your agent's skill directory. It works outside this repository. Set `WIKICONTEXT_URL` and `WIKICONTEXT_USER_EMAIL`; use Google login or the optional `WIKICONTEXT_USER_PASSWORD` for an existing account.
+Install with `npx skills add pocketcontext/wikicontext --skill wikicontext`, or copy `skills/wikicontext/` to your agent's skill directory. It works outside this repository. Set `WIKICONTEXT_URL` and `WIKICONTEXT_USER_EMAIL`; use Google login or the optional `WIKICONTEXT_USER_PASSWORD` for an existing account. `login --google` prints the sign-in URL and opens the default browser unless `--no-browser` is given, an SSH session is detected or no browser is available.
 
 ```sh
 wikicontext login --google

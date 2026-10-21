@@ -3,6 +3,10 @@
 Follow the [paid API retry policy](retries.md): up to three agent-initiated
 retries per authorized recording workflow require no renewed approval.
 
+## Sign-in
+
+`login --google` prints a private sign-in URL, opens it in the default browser and waits up to `--timeout` seconds (default 180) for the callback on `127.0.0.1:--port` (default 8765). Start it in the background, or with a tool timeout longer than the CLI timeout. If the output says `Browser not opened`, open the printed URL in the user's default browser with the OS opener (`open` on macOS, `xdg-open` on Linux), passing it as one quoted argument; never drive or automate the browser. The user completes account selection and consent. Wait for the command to finish, then run `whoami`. Over SSH, forward the printed port from the browser computer (`ssh -L 8765:127.0.0.1:8765 user@ssh-host`), run `wikicontext login --google --no-browser` and open the URL on that computer.
+
 ## Preserve, extract, synthesize, publish
 
 1. Authenticate, verify the live schema and confirm the selected space (`wikicontext spaces`). Group inputs into at most five sources per synthesis batch.
