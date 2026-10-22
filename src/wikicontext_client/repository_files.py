@@ -36,16 +36,19 @@ def render(cfg, destination_id, sequence):
         original = exp.one(cfg, 'sources', 'id,original,sha256', source['source_id'])
         content = exp.download(cfg, original)
     else:
-        body = document['body']
-        # No implicit private wiki references or evidence transformations in GitHub output.
-        if any(marker in body for marker in ('[[', '[^', '[needs verification]')) or re.search(r'^\s*>\s*\[!', body, re.MULTILINE):
-            raise wc.Fail(1, 'Markdown contains wiki links, citations or wiki-only markers; publish reviewed portable Markdown or use exact_copy')
-        content = body.encode('utf-8')
+        content = portable(document['body'])
     return content, {'space': space, 'publication': pub['id'], 'sequence': sequence,
         'destination': destination_id, 'destination_revision': destination['id'],
         'document_revision': document['id'], 'rendered_sha256': exp.digest(content),
         'github_repository': target['github_repository'], 'github_branch': target['github_branch'],
         'github_path': target['github_path']}
+
+
+def portable(body):
+    """No implicit private wiki references or evidence transformations in copied Markdown."""
+    if any(marker in body for marker in ('[[', '[^', '[needs verification]')) or re.search(r'^\s*>\s*\[!', body, re.MULTILINE):
+        raise wc.Fail(1, 'Markdown contains wiki links, citations or wiki-only markers; publish reviewed portable Markdown or use exact_copy')
+    return body.encode('utf-8')
 
 
 def write_new(output, content):

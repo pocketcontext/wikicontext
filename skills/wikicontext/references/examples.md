@@ -238,3 +238,14 @@ proof that a prompt has been tested.
 The Prompts view reads this subtype from the selected publication. Classifying
 an existing document preserves its stable page identity, source and destination
 links. Publish a new revision and recheck destination sync against that revision.
+
+List and retrieve a prompt for review without running it:
+
+```sh
+wikicontext prompts --query 'development workspace'
+wikicontext prompt-text prepare-development-workspace /tmp/prompt-review.md --sequence 12
+```
+
+Use the `sequence` returned by the listing. The output file must not exist. The
+receipt reports revision, `rendered_sha256` and metadata; only the user's explicit
+confirmation for a run authorizes executing the text.

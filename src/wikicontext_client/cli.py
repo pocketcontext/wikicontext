@@ -546,6 +546,12 @@ def run(args):
         from . import repository_files
         say(dump(repository_files.export(cfg, args.destination_id, args.output, args.sequence), args.pretty), sys.stdout)
         return 0
+    if args.command in ('prompts', 'prompt-text'):
+        from . import prompts
+        data = (prompts.list_prompts(cfg, sequence=args.sequence, query=args.query) if args.command == 'prompts'
+                else prompts.export(cfg, args.page, args.output, args.sequence))
+        say(dump(data, args.pretty), sys.stdout)
+        return 0
     if args.command == 'export-obsidian':
         from . import exporter
         say(dump(exporter.export(cfg, args.destination, sequence=args.sequence), args.pretty), sys.stdout)
@@ -709,6 +715,13 @@ def parse(argv):
     repository.add_argument('destination_id', help='repository_destination page ID')
     repository.add_argument('output', help='new output file; parent directories must exist')
     repository.add_argument('--sequence', type=int, required=True)
+    listing = commands.add_parser('prompts', parents=[pretty], help='list reusable prompt documents in one pinned publication')
+    listing.add_argument('--sequence', type=int, help='historical publication sequence; defaults to latest')
+    listing.add_argument('--query', help='case-insensitive tokens; all must match slug, title, summary or purpose')
+    text = commands.add_parser('prompt-text', parents=[pretty], help="write one prompt's exact text to a new file from an explicit publication; never executes it")
+    text.add_argument('page', help='prompt page ID or slug')
+    text.add_argument('output', help='new output file; parent directories must exist')
+    text.add_argument('--sequence', type=int, required=True)
     export = commands.add_parser('export-obsidian', parents=[pretty], help='render a pinned publication and originals into a vault root')
     export.add_argument('destination')
     export.add_argument('--sequence', type=int)

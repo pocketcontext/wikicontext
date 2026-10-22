@@ -72,3 +72,12 @@ Reusable prompts use the same repository-document workflow with
 `document_type: prompt`. Keep exact prompt content separate from descriptive
 metadata and provenance. Prompts can have optional GitHub destinations; reading,
 previewing, copying or downloading a prompt never authorizes its execution.
+
+To run a prompt, follow [running prompts](references/workflows.md#running-prompts).
+List with `wikicontext prompts` and pin the returned sequence; let the user pick.
+Retrieve the text with `prompt-text SLUG OUTPUT --sequence N` into a new private
+file and show it with its purpose, inputs, approval boundaries, required skills,
+target agents and last validation. Execute only after explicit confirmation for
+that run, within the strictest of the prompt's rules, its approval boundaries and
+the user's instructions. Report done, skipped and deviations; record validation
+only with approval.

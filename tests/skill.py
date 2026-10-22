@@ -97,6 +97,31 @@ def main():
         cli('publish',clearing['id'],'--expected-revision',str(cleared['revision']))
         latest=cli('sql','SELECT home FROM publications ORDER BY sequence DESC LIMIT 1')
         assert latest['rows']==[['']]
+        # Prompts are listed and copied from one pinned publication without metadata or execution.
+        prompt_file=Path(tmp)/'prompt.md';prompt_file.write_bytes('# Synthetic prompt\r\nAsk before installing — never run implicitly.\n'.encode())
+        prompt_ingest=cli('ingest',str(prompt_file));prompt_source=prompt_ingest['source']
+        prompt_passage=cli('sql',f"SELECT id FROM passages WHERE rendition='{prompt_ingest['rendition']}' LIMIT 1")['rows'][0][0]
+        prompt_run=cli('create','ingestion_runs',json.dumps({'key':'portable-prompts','status':'staging','description':'Synthetic prompts'}))
+        meta={'catalog_type':'repository_document','document_type':'prompt','purpose':'Synthetic setup','target_agents':['codex'],'approval_boundaries':'Ask first'}
+        exact=cli('create','pages',json.dumps({'slug':'synthetic-exact-prompt','kind':'concept'}))
+        cli('create','page_revisions',json.dumps({'run':prompt_run['id'],'page':exact['id'],'title':'Exact prompt','summary':'Exact synthetic prompt','body':'Exact copy. [needs verification]','properties':dict(meta,output_mode='exact_copy',source_id=prompt_source)}))
+        portable=cli('create','pages',json.dumps({'slug':'synthetic-markdown-prompt','kind':'concept'}))
+        portable_revision=cli('create','page_revisions',json.dumps({'run':prompt_run['id'],'page':portable['id'],'title':'Markdown prompt','summary':'Portable synthetic prompt','body':'# Portable\n\nAsk first.\n','properties':dict(meta,output_mode='markdown'),'property_evidence':{'document_type':['1']}}))
+        cli('create','citations',json.dumps({'page_revision':portable_revision['id'],'passage':prompt_passage,'marker':'1'}))
+        cli('publish',prompt_run['id'],'--expected-revision','1')
+        listed_prompts=cli('prompts')
+        assert [p['slug'] for p in listed_prompts['prompts']]==['synthetic-exact-prompt','synthetic-markdown-prompt'],listed_prompts
+        assert [p['slug'] for p in cli('prompts','--query','PORTABLE')['prompts']]==['synthetic-markdown-prompt']
+        assert cli('prompts','--sequence','1')['prompts']==[]
+        sequence=str(listed_prompts['sequence'])
+        receipt=cli('prompt-text','synthetic-exact-prompt',str(Path(tmp)/'exact.md'),'--sequence',sequence)
+        assert (Path(tmp)/'exact.md').read_bytes()==prompt_file.read_bytes() and receipt['source']==prompt_source and receipt['target_agents']==['codex']
+        cli('prompt-text',portable['id'],str(Path(tmp)/'portable.md'),'--sequence',sequence)
+        assert (Path(tmp)/'portable.md').read_bytes()==b'# Portable\n\nAsk first.\n'
+        cli('prompt-text','synthetic-exact-prompt',str(Path(tmp)/'exact.md'),'--sequence',sequence,expected=1)
+        cli('prompt-text',page['slug'],str(Path(tmp)/'not-prompt.md'),'--sequence',sequence,expected=1)
+        cli('prompt-text','synthetic-exact-prompt',str(Path(tmp)/'early.md'),'--sequence','1',expected=1)
+        cli('prompt-text','synthetic-exact-prompt',str(Path(tmp)/'missing.md'),expected=2)
         cache=list((Path(tmp)/'cache/wikicontext').glob('*.json'))
         assert cache and all(p.stat().st_mode & 0o077 == 0 for p in cache)
         assert cli('get','pages',page['id'])['space']==me['space']
@@ -110,6 +135,6 @@ def main():
             assert any(event['method'] == 'POST' and event['route'] == '/api/collections/sources/records' for event in events)
             assert all(not event.get('sql') and not event['route'].startswith('/api/files/') for event in events)
 
-    print('PASS: copied skill, schema, ingestion, published queries, lint, export, conflicts and private cache')
+    print('PASS: copied skill, schema, ingestion, published queries, lint, export, prompts, conflicts and private cache')
 
 if __name__=='__main__':main()

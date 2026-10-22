@@ -133,6 +133,7 @@ wikicontext create-personal-space
 wikicontext --space SPACE_ID ingest /path/to/private-source.md
 wikicontext ingest /path/to/source.md
 wikicontext search 'launch date'
+wikicontext prompts --query workspace
 wikicontext lint
 wikicontext export-obsidian /path/to/vault
 ```
@@ -234,6 +235,15 @@ content. Preview, copy and download retain the prompt text, without adding wiki
 commentary or executing it. Exact-copy originals require ordinary protected-file
 access and hash/UTF-8 verification. Reader preview/copy/download is limited to
 8 MiB of UTF-8 text. Markdown uses the repository export rules.
+
+The portable client's read-only `prompts [--sequence N] [--query TERMS]` command
+lists prompt metadata from one pinned publication (latest by default), sorted by
+slug. `prompt-text PAGE_OR_SLUG OUTPUT --sequence N` writes the exact prompt text
+to a new private file, with the same verification and refusal rules as
+`export-repository-file`, and prints a receipt with revision, rendered hash and
+metadata. Neither command executes content. Agents run a prompt only after the
+user's explicit confirmation for that run; see the
+[running prompts workflow](skills/wikicontext/references/workflows.md#running-prompts).
 
 Existing documents become prompts only through a reviewed new revision. Publish
 the updated client and deploy the backend/reader before classifying live content;
