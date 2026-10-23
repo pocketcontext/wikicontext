@@ -26,12 +26,12 @@ describe("production space selection", () => {
   it("scopes publication history to selected space", async () => {
     const send = vi.spyOn(pb, "send").mockResolvedValue({ columns: [], rows: [], truncated: false });
     await listPublications(personal.id, 50, 50);
-    expect(send).toHaveBeenCalledWith("/api/context/query", expect.objectContaining({ body: { sql: expect.stringContaining(`WHERE space='${personal.id}' ORDER BY sequence DESC LIMIT 50 OFFSET 50`) } }));
+    expect(send).toHaveBeenCalledWith("/api/context/query", expect.objectContaining({ body: expect.objectContaining({ sql: expect.stringContaining(`WHERE space='${personal.id}' ORDER BY sequence DESC LIMIT 50 OFFSET 50`), consistency: "available" }) }));
   });
   it("infers evidence space by record ID through authenticated filtered SQL", async () => {
     const send = vi.spyOn(pb, "send").mockResolvedValue({ columns: ["space"], rows: [[personal.id]], truncated: false });
     await expect(evidenceSpace("sources", "source000000001")).resolves.toBe(personal.id);
-    expect(send).toHaveBeenCalledWith("/api/context/query", expect.objectContaining({ body: { sql: "SELECT space FROM sources WHERE id='source000000001' LIMIT 1" } }));
+    expect(send).toHaveBeenCalledWith("/api/context/query", expect.objectContaining({ body: expect.objectContaining({ sql: "SELECT space FROM sources WHERE id='source000000001' LIMIT 1", consistency: "fresh" }) }));
   });
 });
 describe("shareable space navigation", () => {

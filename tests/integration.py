@@ -39,6 +39,10 @@ onRecordCreateExecute((e) => {
         with open(Path(tmp)/'server.log','w+') as log:
             proc=subprocess.Popen(common+['serve','--http',f'127.0.0.1:{port}'],cwd=ROOT,stdout=log,stderr=log)
             def request(method,path,body=None,token=None,expected=200):
+                # Ordinary client assertions observe their completed writes.
+                # Background-copy tests opt into available consistency explicitly.
+                if method == 'POST' and path in ('/api/context/query', '/api/context/search') and isinstance(body, dict):
+                    body = {'consistency': 'fresh', **body}
                 headers={'Content-Type':'application/json'}
                 if token: headers['Authorization']=token
                 req=urllib.request.Request(f'http://127.0.0.1:{port}'+path,data=None if body is None else json.dumps(body).encode(),headers=headers,method=method)

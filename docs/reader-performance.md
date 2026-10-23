@@ -1,9 +1,9 @@
 # Reader performance changes
 
-WikiContext pins the published PocketContext source commit
-`20843b7c888daaba55f0646dd77455b7b309d4cc` for this change. Production measurements
-in the 14 October handoff are historical; no production benchmark or deployment
-is part of this source adoption.
+The tested server revision is recorded in `POCKETCONTEXT_VERSION`. The measurements
+and validation record below describe the earlier synchronous implementation;
+current background behavior is described in [background snapshots](background-snapshots.md).
+No production benchmark or deployment is implied by source adoption.
 
 ## Reader behavior
 
@@ -38,39 +38,33 @@ No speculative hover requests are issued.
 
 ## Server adoption
 
-The pinned PocketContext server reconstructs safe indexes over exported values.
-It also offers `snapshot.trackChanges`, which remains disabled in this application
-configuration. SQL therefore retains global commit invalidation. Enabling tracked
-refresh is a separate configuration adoption; read PocketContext's
-`docs/filtered-snapshots.md` first.
+The server reconstructs safe indexes over each private exported SQLite file.
+`pocketcontext.json` enables asynchronous full copies with one builder and a
+1 GiB disk budget. Available reads retain a completed generation while another
+builds. Python reads request fresh consistency; browser membership and latest
+publication checks also request fresh consistency. Other reader SQL and search
+requests carry the latest observed generation as `atLeast`, preventing hydration
+from regressing behind a completed search or publication check.
 
-Tracking installs private transactional table tokens and triggers through the
-normal application writer. Unrelated table writes can retain snapshots; changed
-tables refresh every export whose filter depends on them. Refresh uses a separate
-file and verifies consistency before returning results. Concurrent conflicting
-changes discard the partial refresh and fall back to a full source transaction.
-Authentication changes revalidate all exports. The server never serves stale SQL
-as a background-refresh shortcut and does not share snapshots across identities.
-
-First installation requires a writable maintenance state; frozen startup only
-verifies already installed tracking. Include installation, ordinary record writes,
-revocation, rollback, complete restore and frozen restart in release rehearsals.
-Tracking uses table granularity, so it does not yet isolate writes by space or
-copy only appended rows. Direct private FTS search retains its independent fresh
-authorized source reads and content-fingerprint cache.
+The reader polls requester snapshot status while stale/refreshing and after
+publication events, then reconciles the view when a new generation completes.
+It distinguishes pending/resource failures from final response-size failures;
+only the latter cause row-batch reduction. Membership visibility in available
+reads is eventual; REST and protected files keep their independent authorization.
+Search uses private disk FTS files owned by the same snapshot generation.
 
 ## Measurement
 
 Use the isolated benchmark with the previous server, then the adopted server:
 
 ```sh
-python3 tests/search_benchmark.py --binary /absolute/path/to/previous/server
-python3 tests/search_benchmark.py --binary /absolute/path/to/adopted/server --track-changes
+python3 tests/search_benchmark.py --binary /absolute/path/to/adopted/server --synchronous
+python3 tests/search_benchmark.py --binary /absolute/path/to/adopted/server
 ```
 
 The script reports a fresh identity's first SQL request before any warmup, repeated
-warm requests, and the first read after a controlled visible REST write. Direct
-private-search timing is separate. HTTP elapsed time includes transport and
+warm requests, and the first fresh read after a controlled visible REST write.
+Private-search timing is separate; output identifies the chosen implementation. HTTP elapsed time includes transport and
 execution; it does not isolate snapshot construction. For attribution, use the
 existing opt-in trace spans (`snapshot.wait`, `snapshot.acquire`, `snapshot.build`,
 `snapshot.copy`, `snapshot.indexes` and query execution) without SQL-text capture.

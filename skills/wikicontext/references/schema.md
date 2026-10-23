@@ -1,6 +1,16 @@
 # Knowledge schema
 
-Use `wikicontext schema` for live SQL columns and `wikicontext check` for differences from `schema.json`. Business reads use explicit columns. SQL returns `{columns, rows, truncated}`; never act on a truncated result as if complete. Page or narrow the query.
+Use `wikicontext schema` for live SQL columns and `wikicontext check` for differences from `schema.json`. Business reads use explicit columns. SQL returns `{columns, rows, truncated, snapshot}`; never act on a truncated result as if complete. Page or narrow the query.
+
+The maintained Python client requests `consistency: fresh` for SQL and search,
+including post-write verification and interrupted-ingestion reconciliation. A
+read can wait up to 120 seconds for the request-start state, with a 130-second
+transport timeout. Pending copies are retried within a bounded wait; disk/resource
+failures require operator attention. Do not interpret a pending response as an
+absent record or replay a write because its verification read is pending. Direct
+API callers using the default available mode may see the last complete snapshot.
+`snapshot.generation` is an opaque requester token; `atLeast` accepts a previously
+observed generation, not a REST commit token.
 
 Every domain table has an immutable `space`. SQL returns only rows of spaces where you are an active member. Filter by `space` when you mean one space.
 

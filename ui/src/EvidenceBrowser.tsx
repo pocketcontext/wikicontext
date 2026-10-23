@@ -16,7 +16,7 @@ export function evidenceHref(collection: EvidenceCollection, id = "", term = "",
 }
 const literal = (value: string) => `'${value.replaceAll("'", "''")}'`;
 type Row = { id: string; title: string; body?: string; locator?: string; source_id?: string };
-export default function EvidenceBrowser({ space, collection, id, term, publication, offset, navigation, onTitleChange }: { space: string; collection: EvidenceCollection; id: string; term: string; publication: string; offset: number; navigation: HTMLElement | null; onTitleChange?: (title: string) => void }) {
+export default function EvidenceBrowser({ space, collection, id, term, publication, offset, navigation, onTitleChange, snapshotGeneration }: { space: string; collection: EvidenceCollection; id: string; term: string; publication: string; offset: number; navigation: HTMLElement | null; onTitleChange?: (title: string) => void; snapshotGeneration?: string }) {
   const actionEpoch = useRef(0);
   useEffect(() => { actionEpoch.current++; return () => { actionEpoch.current++; }; }, [space, collection, id]);
   const [rows, setRows] = useState<Row[]>([]);
@@ -46,7 +46,7 @@ export default function EvidenceBrowser({ space, collection, id, term, publicati
       finally { if (active) setBusy(false); }
     })(), 200);
     return () => { active = false; clearTimeout(timer); };
-  }, [space, collection, id, term, offset, onTitleChange]);
+  }, [space, collection, id, term, offset, onTitleChange, snapshotGeneration]);
   const recordLink = (row: Row) => <a key={row.id} className={row.id === id ? "selected" : undefined} aria-current={row.id === id ? "page" : undefined} href={evidenceHref(collection, row.id, term, publication, offset)}>
     <span>{row.title}{row.locator && <small>{row.locator}</small>}</span>
   </a>;

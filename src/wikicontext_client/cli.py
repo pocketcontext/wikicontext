@@ -37,6 +37,7 @@ SCHEMA_FILE = Path(__file__).resolve().parent / 'schema.json'
 STAMPS = ('created_by', 'updated_by')
 ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789'
 TIMEOUT = 30
+SNAPSHOT_WAIT = 120
 USER_AGENT = 'WikiContext/1.0'
 hidden = []  # The password and tokens. say() masks them in everything it prints.
 
@@ -153,8 +154,17 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 opener = urllib.request.build_opener(NoRedirect)
 
 
-def send(cfg, method, path, body=None, token=None, timeout=TIMEOUT):
+def send(cfg, method, path, body=None, token=None, timeout=None):
     """Send one request. Returns (status, parsed JSON body, or the text when it is not JSON)."""
+    if method == 'POST' and path in ('/api/context/query', '/api/context/search') and isinstance(body, dict):
+        # Ingestion reconciles committed writes, including lost responses and
+        # work performed by another client. An available older snapshot cannot
+        # establish that a record is absent or that an import is complete.
+        body = {'consistency': 'fresh', **body}
+        if body['consistency'] == 'fresh' and timeout is None:
+            timeout = SNAPSHOT_WAIT + 10
+    if timeout is None:
+        timeout = TIMEOUT
     headers = {'Content-Type': 'application/json', 'User-Agent': USER_AGENT}
     if token:
         headers['Authorization'] = token
@@ -328,7 +338,7 @@ def token_rejected(cfg, token):
     return send(cfg, 'POST', '/api/context/query', {'sql': 'SELECT 1'}, token)[0] == 401
 
 
-def call(cfg, method, path, body=None):
+def call(cfg, method, path, body=None, *, timeout=None):
     """Authenticated request. Returns (status, data).
 
     Only the SQL endpoints answer an expired or revoked token with 401. The records API treats it as no
@@ -347,12 +357,13 @@ def call(cfg, method, path, body=None):
         session = auth_session(cfg, data, 'google')
         if path == '/api/collections/users/auth-refresh':
             return status, data
-    status, data = send(cfg, method, path, body, session['token'])
+    options = {'timeout': timeout} if timeout is not None else {}
+    status, data = send(cfg, method, path, body, session['token'], **options)
     if cached and 400 <= status < 500 and status not in (409, 429) and (status == 401 or token_rejected(cfg, session['token'])):
         if session.get('method') == 'google':
             raise Fail(1, 'Google session was rejected; run wikicontext login --google again.')
         session = login(cfg)
-        status, data = send(cfg, method, path, body, session['token'])
+        status, data = send(cfg, method, path, body, session['token'], **options)
     return status, data
 
 
@@ -371,13 +382,31 @@ def batch_failures(data):
 
 def must(cfg, method, path, body=None):
     """Like call(), but an HTTP error ends the command with the server's status and body on stderr."""
+    deadline = time.monotonic() + SNAPSHOT_WAIT
     status, data = call(cfg, method, path, body)
     safe_read = (method == 'GET' or path in ('/api/context/query', '/api/context/search', '/api/files/token'))
-    for attempt in range(3):
-        if not safe_read or status not in (429, 503):
+    attempt = 0
+    while safe_read and status in (429, 503):
+        code = data.get('code') if isinstance(data, dict) else None
+        if code == 'snapshot_resource_limit':
             break
-        time.sleep(10 if status == 429 else .5 * (attempt + 1))
-        status, data = call(cfg, method, path, body)
+        if code == 'snapshot_pending':
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(1, remaining))
+        else:
+            if attempt >= 3:
+                break
+            time.sleep(10 if status == 429 else .5 * (attempt + 1))
+            attempt += 1
+        options = {}
+        if code == 'snapshot_pending':
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            options['timeout'] = remaining
+        status, data = call(cfg, method, path, body, **options)
     if status < 400:
         return data
     lines = [f'HTTP {status} from {method} {path}', dump(data, pretty=True)]

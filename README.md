@@ -4,7 +4,7 @@ Current release controls and platform coverage: [common CI and deployment contra
 
 An agent-maintained knowledge base on PocketContext. Sources, extracted passages, versioned pages, citations, links and publication history live in WikiContext. The browser reader renders published pages and updates when agents publish. Obsidian consumes a reproducible Markdown export. Ingestion and agent questions use the portable skill and authenticated APIs.
 
-Existing knowledge lives in the Company space. Admitted Workspace users receive company editor membership when their account is created; operators manage subsequent membership changes, and login never restores a revoked membership. Personal spaces are optional and created explicitly. SQL, REST, realtime and protected files independently enforce active space membership. PocketBase's existing default `users` collection supplies identities, with verified Workspace Google JIT and public signup blocked. New accounts never receive account administration. Operators disable accounts to revoke application sessions; Google suspension alone does not revoke an existing session. Re-enabling requires fresh login. Seven-day tokens renew during active Google client use.
+Existing knowledge lives in the Company space. Admitted Workspace users receive company editor membership when their account is created; operators manage subsequent membership changes, and login never restores a revoked membership. Personal spaces are optional and created explicitly. SQL snapshots capture active space membership; background copies become visible when complete. REST, realtime and protected files independently enforce current membership. PocketBase's existing default `users` collection supplies identities, with verified Workspace Google JIT and public signup blocked. New accounts never receive account administration. Operators disable accounts to revoke application sessions; Google suspension alone does not revoke an existing session. Re-enabling requires fresh login. Seven-day tokens renew during active Google client use.
 
 ## Run locally
 
@@ -18,14 +18,20 @@ make build
 ```
 
 The pinned build includes `sqlite_math_functions,sqlite_percentile,sqlite_fts5`.
-Filtered SQL reuses bounded per-user snapshots until the database changes.
-Authentication is checked on every request; committed writes invalidate cached
-snapshots, including membership changes. The first read after a write rebuilds
-the snapshot. Search and ingestion keep their existing APIs and conflict checks.
-Authenticated SQL supports `json_each`/`json_tree` and median/percentile aggregates.
-Published-page search uses authenticated private FTS5 indexes derived from a
-requester-visible publication, with generation-checked pagination. See the
-[search contract and maintenance guide](docs/fts-adoption.md).
+Filtered SQL uses private per-user SQLite files, refreshed asynchronously after
+writes. Available reads use the last complete copy while its replacement builds;
+SQL membership revocation therefore takes effect when the next copy completes.
+Authentication is checked on every request. The Python client requests `fresh`
+SQL and search reads, preserving write verification and ingestion resumption. The
+reader uses available copies, polls refresh status and requests fresh membership
+and publication checks. Cold/fresh reads wait within fixed deadlines and return
+retryable pending errors if no suitable copy is ready. See the
+[consistency and resource contract](docs/background-snapshots.md).
+
+Authenticated SQL retains arbitrary permitted read queries, `json_each`/`json_tree`
+and median/percentile aggregates. Published-page search uses generation-owned
+private disk FTS5 indexes derived from a requester-visible publication, with
+content-fingerprint pagination. See the [search contract](docs/fts-adoption.md).
 
 Keep data outside Git. Provision users through operator maintenance, or configure a separate Google Web client with `WIKICONTEXT_GOOGLE_CLIENT_ID`, `WIKICONTEXT_GOOGLE_CLIENT_SECRET` and `WIKICONTEXT_GOOGLE_WORKSPACE_DOMAIN`. Register `http://127.0.0.1:8765/callback` and the approved origin's `/api/oauth2-redirect`. Use ordinary user credentials for knowledge operations. Production runs at https://wiki.pocketcontext.com. See [release verification](DEPLOYMENT.md) and [deployment procedures](docs/deployment.md).
 
@@ -319,6 +325,7 @@ Use synthetic isolated databases only. From this repository, with the pinned ser
 ```sh
 python3 tests/launcher.py
 python3 tests/integration.py --binary /absolute/path/to/pinned/pocketcontext
+python3 tests/background_snapshots.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/spaces.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/spaces_migration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/tracing.py --binary /absolute/path/to/pinned/pocketcontext

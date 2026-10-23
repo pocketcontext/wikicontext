@@ -6,6 +6,18 @@ import EvidenceBrowser from "./EvidenceBrowser";
 vi.mock("./ImagePreview", () => ({ default: () => null }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
+it("reloads evidence when a background copy completes without another navigation", async () => {
+  vi.spyOn(readerAPI, "query")
+    .mockResolvedValueOnce([{ id: "source000000001", title: "Earlier source" }])
+    .mockResolvedValueOnce([{ id: "source000000002", title: "New source" }]);
+  const props = { space: "companyspace001", collection: "sources" as const, id: "", term: "", publication: "", offset: 0, navigation: null };
+  const view = render(<EvidenceBrowser {...props} snapshotGeneration="old" />);
+  await screen.findByRole("link", { name: "Earlier source" });
+  view.rerender(<EvidenceBrowser {...props} snapshotGeneration="new" />);
+  await screen.findByRole("link", { name: "New source" });
+  expect(screen.queryByRole("link", { name: "Earlier source" })).toBeNull();
+});
+
 it("keeps a deep-linked source visible when it is outside the result page, without listing raw IDs", async () => {
   const selected = { id: "source000000001", title: "Synthetic source" };
   vi.spyOn(readerAPI, "query")

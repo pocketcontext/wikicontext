@@ -72,7 +72,7 @@ def measure_search(fixtures, publication, repeats):
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
         elapsed = list(pool.map(reader, range(12)))
     return {'endpoint': '/api/context/search',
-            'source': 'Authorized source transaction plus separate private FTS cache; no SQL snapshot',
+            'source': 'Requester snapshot generation and private disk FTS' if 'snapshot' in result else 'Authorized source transaction and private memory FTS',
             'first_index_query': 'topic3',
             'queries': queries, 'concurrent_distinct_readers': 4, 'concurrent_requests': 12,
             'concurrent_median_ms': round(statistics.median(elapsed), 2), 'concurrent_max_ms': round(max(elapsed), 2)}
@@ -89,6 +89,7 @@ def main():
     parser.add_argument('--passage-chars', type=int, default=405)
     parser.add_argument('--repeats', type=int, default=3)
     parser.add_argument('--track-changes', action='store_true', help='Enable candidate server transactional tracking only in the isolated fixture')
+    parser.add_argument('--synchronous', action='store_true', help='Use legacy synchronous snapshots and memory FTS for comparison')
     parser.add_argument('--fixture', type=Path, help='Retain synthetic fixture in a new directory outside the repository')
     parser.add_argument('--output', type=Path)
     args = parser.parse_args()
@@ -101,7 +102,7 @@ def main():
     manager = contextlib.nullcontext(args.fixture) if args.fixture else tempfile.TemporaryDirectory(prefix='wikicontext-private-benchmark-')
     with manager as temporary:
         work = Path(temporary) / 'app'
-        with running(args.binary, work, track_changes=args.track_changes) as request:
+        with running(args.binary, work, track_changes=args.track_changes, synchronous=args.synchronous) as request:
             admin, user, token = credentials(request)
             f = Fixture(request, token)
             fixtures = [f]
@@ -179,7 +180,7 @@ def main():
             assert counts['revisions'] == args.revisions
             measurements = measure_search(fixtures, publication, args.repeats)
             assert not f.search(publication, 'draftsecret')['hits']
-            result = dict(counts, track_changes=args.track_changes, seed_seconds=round(seed_seconds, 2), publication_median_ms=round(statistics.median(publish_times), 2),
+            result = dict(counts, background=not args.synchronous, consistency='fresh', track_changes=args.track_changes, seed_seconds=round(seed_seconds, 2), publication_median_ms=round(statistics.median(publish_times), 2),
                           publication_max_ms=round(max(publish_times), 2),
                           measurement='HTTP request wall time, not isolated snapshot/index construction',
                           publication_operation='REST publish plus authenticated SQL publication lookup',

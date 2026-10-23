@@ -11,6 +11,24 @@ import urllib.request
 from unittest.mock import patch
 from wikicontext_client import cli as wc
 class Client(unittest.TestCase):
+    def test_sql_requests_require_fresh_snapshots_without_mutating_callers(self):
+        body = {'sql': 'SELECT id FROM sources'}
+        sent = []
+        def response(request, **_):
+            sent.append(json.loads(request.data))
+            value = io.BytesIO(b'{"columns":[],"rows":[],"truncated":false}')
+            value.status = 200
+            return value
+        with patch.object(wc.opener, 'open', side_effect=response):
+            wc.send({'url': 'http://127.0.0.1:1'}, 'POST', '/api/context/query', body)
+            wc.send({'url': 'http://127.0.0.1:1'}, 'POST', '/api/context/query',
+                    dict(body, consistency='available'))
+            wc.send({'url': 'http://127.0.0.1:1'}, 'POST', '/api/context/search', {'query': 'synthetic'})
+        self.assertEqual(sent[0], dict(body, consistency='fresh'))
+        self.assertEqual(sent[1], dict(body, consistency='available'))
+        self.assertEqual(sent[2], {'query': 'synthetic', 'consistency': 'fresh'})
+        self.assertEqual(body, {'sql': 'SELECT id FROM sources'})
+
     def test_tracing_excludes_external_origin_and_request_contents(self):
         from observecontext_client.instrumentation import instrument_cli
         with tempfile.TemporaryDirectory() as directory:
@@ -64,6 +82,27 @@ class Client(unittest.TestCase):
         with patch.object(wc,'call',return_value=(503,{})) as call,patch.object(wc.time,'sleep') as sleep:
             with self.assertRaises(wc.Fail):wc.must({},'POST','/api/collections/pages/records',{})
             self.assertEqual(call.call_count,1);sleep.assert_not_called()
+    def test_pending_snapshot_waits_for_ready_without_accepting_empty_status(self):
+        with patch.object(wc, 'call', side_effect=[
+                (503, {'code': 'snapshot_pending'}), (200, {'columns': ['id'], 'rows': [['ready']]})]) as call, \
+                patch.object(wc.time, 'sleep') as sleep:
+            self.assertEqual(wc.must({}, 'POST', '/api/context/query', {'sql': 'SELECT id FROM sources'})['rows'], [['ready']])
+        self.assertEqual(call.call_count, 2)
+        sleep.assert_called_once_with(1)
+        self.assertLessEqual(call.call_args.kwargs['timeout'], wc.SNAPSHOT_WAIT)
+    def test_pending_retry_cannot_restart_the_full_fresh_timeout(self):
+        with patch.object(wc, 'call', side_effect=[(503, {'code': 'snapshot_pending'}), (200, {'rows': []})]) as call, \
+                patch.object(wc.time, 'monotonic', side_effect=[0, 118, 119]), patch.object(wc.time, 'sleep'):
+            wc.must({}, 'POST', '/api/context/query', {'sql': 'SELECT 1'})
+        self.assertEqual(call.call_args.kwargs['timeout'], 1)
+    def test_pending_wait_has_a_deadline_and_resource_failures_do_not_retry(self):
+        for code in ('snapshot_pending', 'snapshot_resource_limit'):
+            with patch.object(wc, 'call', return_value=(503, {'code': code})) as call, \
+                    patch.object(wc.time, 'monotonic', side_effect=[0, 121]), patch.object(wc.time, 'sleep') as sleep:
+                with self.assertRaises(wc.Fail):
+                    wc.must({}, 'POST', '/api/context/query', {'sql': 'SELECT 1'})
+                self.assertEqual(call.call_count, 1)
+                sleep.assert_not_called()
     def test_retry_budget(self):
         with patch.object(wc,'call',return_value=(503,{})) as call,patch.object(wc.time,'sleep'):
             with self.assertRaises(wc.Fail):wc.must({},'POST','/api/context/query',{})

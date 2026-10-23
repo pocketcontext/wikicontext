@@ -1,25 +1,24 @@
 {
-  "search": {
-    "indexes": [
-      "pages"
-    ],
-    "limits": {
-      "maxIndexBytes": 8388608,
-      "maxQueryBytes": 4096,
-      "maxTerms": 16,
-      "maxOffset": 10000,
-      "maxScopeMembers": 10000,
-      "maxLimit": 100,
-      "defaultLimit": 20
+  "snapshot": {
+    "statusPath": "/api/context/snapshot",
+    "resources": {
+      "maxDiskBytes": 1073741824,
+      "minFreeBytes": 268435456,
+      "buildTimeoutMs": 120000,
+      "maxBuilders": 1,
+      "maxCachedUsers": 16,
+      "refreshIntervalMs": 1000,
+      "retryDelayMs": 1000,
+      "maxValueBytes": 16777216
     },
-    "isolation": "private"
-  },
-  "snapshotLimits": {
-    "timeoutMs": 5000,
-    "maxRows": 100000,
-    "maxBytes": 33554432,
-    "maxConcurrent": 4,
-    "maxConcurrentPerRequester": 0
+    "legacyRowByteLimitsApplyTo": "filtered-reads",
+    "mode": "background",
+    "defaultConsistency": "available",
+    "consistency": [
+      "available",
+      "fresh"
+    ],
+    "generationChecks": true
   },
   "tables": [
     {
@@ -614,8 +613,30 @@
   ],
   "permissionModel": "filtered-snapshot",
   "limits": {
+    "timeoutMs": 2000,
     "maxRows": 500,
-    "maxBytes": 1048576,
-    "timeoutMs": 2000
+    "maxBytes": 1048576
+  },
+  "search": {
+    "indexes": [
+      "pages"
+    ],
+    "limits": {
+      "maxOffset": 10000,
+      "maxScopeMembers": 10000,
+      "maxLimit": 100,
+      "defaultLimit": 20,
+      "maxQueryBytes": 4096,
+      "maxTerms": 16
+    },
+    "isolation": "private",
+    "storage": "snapshot-disk"
+  },
+  "snapshotLimits": {
+    "timeoutMs": 5000,
+    "maxRows": 100000,
+    "maxBytes": 33554432,
+    "maxConcurrent": 4,
+    "maxConcurrentPerRequester": 0
   }
 }

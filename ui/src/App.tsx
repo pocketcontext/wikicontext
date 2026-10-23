@@ -13,7 +13,7 @@ import PropertiesPanel from "./Properties";
 import "./catalog.css";
 import ImagePreview from "./ImagePreview";
 import EvidenceBrowser, { evidenceHref } from "./EvidenceBrowser";
-import { api, pb, companySpace, selectSpace, sessionGeneration, type Space } from "./api";
+import { api, pb, companySpace, selectSpace, sessionGeneration, type Space, type SnapshotStatus } from "./api";
 import SearchResults, { searchHref } from "./SearchResults";
 import { homePageSlug } from "./home";
 import WelcomePage from "./WelcomePage";
@@ -87,6 +87,7 @@ function Reader() {
     selection: ReturnType<typeof route>;
   } | null>(null);
   const [error, setError] = useState("");
+  const [queryStatus, setQueryStatus] = useState<SnapshotStatus | null>(null);
   const membershipsCache = useRef<Space[] | null>(null);
   const membershipsCheckedAt = useRef(0);
   const membershipReads = useRef(new ReconciledRead<Space[]>());
@@ -361,6 +362,16 @@ function Reader() {
       } while (refreshQueued.current && mounted.current && pb.authStore.isValid);
     } finally { refreshInFlight.current = false; }
   }, [load]);
+  useEffect(() => {
+    if (!authenticated) { setQueryStatus(null); return; }
+    return api.watchSnapshotStatus((status, changed) => {
+      if (!mounted.current) return;
+      setQueryStatus(status);
+      // Publication events can precede a completed background copy. Its
+      // generation notification reconciles the view without another event.
+      if (changed) void refresh();
+    });
+  }, [authenticated, refresh]);
   useEffect(() => {
     if (authenticated) void load();
   }, [authenticated, load, current.slug, current.welcome, current.catalog, current.publication, current.space, current.collection, current.record]);
@@ -696,6 +707,10 @@ function Reader() {
           </div>
         )}
         {busy && snapshot && <div className="refresh-status" role="status">{!sameView ? "Opening page…" : "Checking for updates…"}</div>}
+        {!busy && queryStatus && (queryStatus.refreshing || queryStatus.stale || queryStatus.lastError) &&
+          <div className="refresh-status" role="status">{queryStatus.lastError
+            ? "Updates are delayed. Showing the last available knowledge."
+            : "Updating knowledge…"}</div>}
         {pinned && (
           <div className="history-banner">
             Viewing publication {snapshot?.publication.sequence}.{" "}
@@ -713,7 +728,7 @@ function Reader() {
             aria-busy={busy}
           >
             {showEmptySpace && <section className="empty-state"><h1>This space has no published pages</h1><p>Pages appear here when your agent publishes knowledge in this space.</p></section>}
-            {view.collection !== "pages" && space && <EvidenceBrowser key={`evidence-${accessEpoch}-${space.id}`} space={space.id} collection={view.collection} id={view.record} term={view.query} publication={view.publication} offset={view.offset} navigation={evidenceNavigation} onTitleChange={setEvidenceTitle} />}
+            {view.collection !== "pages" && space && <EvidenceBrowser key={`evidence-${accessEpoch}-${space.id}`} space={space.id} collection={view.collection} id={view.record} term={view.query} publication={view.publication} offset={view.offset} navigation={evidenceNavigation} onTitleChange={setEvidenceTitle} snapshotGeneration={queryStatus?.generation} />}
             <SearchResults key={`search-${accessEpoch}-${space?.id || "none"}`}
               publication={snapshot?.publication.id || lastPublication.current}
               query={view.query}

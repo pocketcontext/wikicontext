@@ -16,8 +16,13 @@ from snapshot import snapshot
 from integration import ROOT, credentials
 
 
+def search_content(result):
+    """Immutable hit corpus remains stable while copy capture metadata changes."""
+    return {key: value for key, value in result.items() if key != 'snapshot'}
+
+
 @contextlib.contextmanager
-def running(binary, work, *, data=None, track_changes=False):
+def running(binary, work, *, data=None, track_changes=False, synchronous=False):
     """Start an isolated copied application."""
     work=Path(work);work.mkdir(exist_ok=True,parents=True)
     hooks=work/'pb_hooks'; migrations=work/'pb_migrations'
@@ -26,6 +31,9 @@ def running(binary, work, *, data=None, track_changes=False):
     shutil.copytree(ROOT/'pb_hooks',hooks)
     shutil.copytree(ROOT/'pb_migrations',migrations)
     cfg=json.loads((ROOT/'pocketcontext.json').read_text())
+    if synchronous:
+        cfg['snapshot'].pop('background', None)
+        for index in cfg['search']['indexes'].values():index.pop('snapshotScopeWhere', None)
     if track_changes:cfg['snapshot']['trackChanges']=True
     (work/'pocketcontext.json').write_text(json.dumps(cfg))
     (hooks/'search_failure_fixture.pb.js').write_text('''
@@ -42,6 +50,8 @@ onRecordCreateExecute(e=>{
     with (work/'server.log').open('w+') as log:
         proc=subprocess.Popen(common+['serve','--http',f'127.0.0.1:{port}'],cwd=work,stdout=log,stderr=log)
         def request(method,path,body=None,token=None,expected=200):
+            if method == 'POST' and path in ('/api/context/query', '/api/context/search') and isinstance(body, dict):
+                body = {'consistency': 'fresh', **body}
             headers={'Content-Type':'application/json'}
             if token:headers['Authorization']=token
             req=urllib.request.Request(f'http://127.0.0.1:{port}'+path,data=None if body is None else json.dumps(body).encode(),headers=headers,method=method)
@@ -115,7 +125,7 @@ def main():
             before=f.search(pub3)
             failed=f.run('audit-failure',id='pubfailure00001');f.revision(failed,p,r3['id'])
             f.publish(failed,(400,500))
-            assert f.search(pub3)==before
+            assert search_content(f.search(pub3))==search_content(before)
             assert f.query("SELECT status FROM ingestion_runs WHERE id='pubfailure00001'")==[{'status':'staging'}]
             # Personal scopes must look absent to another company member.
             request('POST','/api/collections/users/records',{'email':'other@example.com','name':'Other','password':'SyntheticUserPassword123!','passwordConfirm':'SyntheticUserPassword123!'},admin)
@@ -134,15 +144,15 @@ def main():
             company=Fixture(request,token)
             cp=company.page('company');cr=company.run('company');company.revision(cr,cp);company.publish(cr)
             final=f.run('final');r4=f.revision(final,p,r3['id']);pub4=f.publish(final)
-            assert f.search(pub2,limit=1,offset=1,expectedGeneration=page1['generation'])==page2
+            assert search_content(f.search(pub2,limit=1,offset=1,expectedGeneration=page1['generation']))==search_content(page2)
             expected=f.search(pub4)
             assert [x['id'] for x in expected['hits']]==[r4['id']]
             snapshot(request.data_dir,Path(tmp)/'restored_data')
         with running(args.binary,Path(tmp)/'restore_app',data=Path(tmp)/'restored_data') as request:
             restored=Fixture(request,token,personal)
-            assert restored.search(pub4)==expected
+            assert search_content(restored.search(pub4))==search_content(expected)
             assert {x['id'] for x in restored.search(pub1)['hits']}=={r1['id'],r2['id']}
-            assert restored.search(pub2,limit=1,offset=1,expectedGeneration=page1['generation'])==page2
+            assert search_content(restored.search(pub2,limit=1,offset=1,expectedGeneration=page1['generation']))==search_content(page2)
     print('PASS: private scopes, draft/archive exclusion, historical pagination, generation conflicts/stability, personal isolation, publication rollback and populated restore')
 
 

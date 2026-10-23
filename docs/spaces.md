@@ -6,8 +6,8 @@ The display name is not used to identify the company boundary.
 
 Each domain record carries a required `space` relation. Active owner/editor
 memberships permit writes; active reader memberships permit reads. SQL filtered
-snapshots, ordinary REST, realtime and protected originals independently enforce
-membership. Foreign and missing records have the same not-found behavior.
+snapshots enforce membership captured in the completed copy. Ordinary REST,
+realtime and protected originals independently enforce current membership. Foreign and missing records have the same not-found behavior.
 References, citations, links, publication manifests, home choices and catalog
 relationships must remain within one space. Source hashes, run keys, page slugs
 and publication sequence numbers are unique per space.
@@ -31,8 +31,12 @@ spaces or manage memberships. Catalog People/Groups remain knowledge identities
 and accountability metadata, not authentication or membership records.
 
 A superuser is trusted provisioning authority, but an ordinary user's SQL session
-never inherits superuser visibility. Membership is rechecked for requests; already
-exported files and content previously delivered to a browser cannot be recalled.
+never inherits superuser visibility. Account authentication is rechecked on every request. Available SQL/search reads
+can retain the previous membership view until the next background copy completes;
+fresh reads wait for a copy covering their request-start barrier. The client uses
+fresh reads and the reader explicitly reconciles membership through fresh SQL.
+Already exported files and content previously delivered to a browser cannot be
+recalled. See [background snapshots](background-snapshots.md).
 
 ## Reader and client
 

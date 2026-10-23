@@ -90,7 +90,9 @@ jobs:
       - name: Test reader in a real browser
         run: python3 wikicontext/tests/ui_browser.py --binary pocketcontext/bin/pocketcontext
       - name: Test wiki
-        run: python3 wikicontext/tests/integration.py --binary pocketcontext/bin/pocketcontext
+        run: |
+          python3 wikicontext/tests/integration.py --binary pocketcontext/bin/pocketcontext
+          python3 wikicontext/tests/background_snapshots.py --binary pocketcontext/bin/pocketcontext
       - name: Test space privacy and populated company migration
         run: |
           python3 wikicontext/tests/spaces.py --binary pocketcontext/bin/pocketcontext

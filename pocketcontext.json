@@ -188,7 +188,17 @@
     "timeoutMs": 5000,
     "maxRows": 100000,
     "maxBytes": 33554432,
-    "maxConcurrent": 4
+    "maxConcurrent": 4,
+    "background": {
+      "maxDiskBytes": 1073741824,
+      "minFreeBytes": 268435456,
+      "buildTimeoutMs": 120000,
+      "maxBuilders": 1,
+      "maxCachedUsers": 16,
+      "refreshIntervalMs": 1000,
+      "retryDelayMs": 1000,
+      "maxValueBytes": 16777216
+    }
   },
   "search": {
     "maxIndexBytes": 8388608,
@@ -213,7 +223,8 @@
           "field": "manifest"
         },
         "members": "visible",
-        "where": "archived = 0"
+        "where": "archived = 0",
+        "snapshotScopeWhere": "publications.sequence = (SELECT max(p.sequence) FROM publications p WHERE p.space = publications.space)"
       }
     }
   }

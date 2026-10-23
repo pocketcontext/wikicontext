@@ -247,7 +247,7 @@ it("uses same-space SQL and refuses a denied protected original download", async
   expect(send).toHaveBeenCalledWith(
     "/api/context/query",
     expect.objectContaining({
-      body: { sql: expect.stringContaining("AND space='companyspace001'") },
+      body: expect.objectContaining({ sql: expect.stringContaining("AND space='companyspace001'") }),
     }),
   );
   expect(fetchOriginal).toHaveBeenCalledWith(

@@ -1,4 +1,6 @@
 import { MemoryCache } from "./memoryCache";
+import { SnapshotMonitor, snapshotStatus, type SnapshotStatus } from "./snapshotStatus";
+export type { SnapshotStatus } from "./snapshotStatus";
 import PocketBase, { BaseAuthStore, LocalAuthStore, type SendOptions, type RecordAuthResponse } from "pocketbase";
 import type {
   Citation,
@@ -19,6 +21,7 @@ export function clearReaderCache(): void {
   publicationCache.clear();
   pageLists.clear();
   pageDetails.clear();
+  snapshots.reset();
 }
 
 // The SDK synchronizes this application's credentials across same-origin tabs.
@@ -68,6 +71,15 @@ export const pb = new PocketBase(
 );
 // Concurrent page/evidence queries share an endpoint but must not cancel each other.
 pb.autoCancellation(false);
+const snapshots = new SnapshotMonitor(async () => snapshotStatus(
+  await pb.send("/api/context/snapshot", { method: "GET", signal: AbortSignal.timeout(10000) }),
+));
+export function watchSnapshotStatus(callback: (status: SnapshotStatus | null, changed: boolean) => void) {
+  return snapshots.watch(callback);
+}
+function requestSnapshotRefresh() {
+  if (snapshots.watching) void snapshots.refresh().catch(() => {});
+}
 // Reject fully parsed responses from a previous identity before callers see them.
 const send = pb.send.bind(pb);
 pb.send = async <T = unknown>(path: string, options: SendOptions = {}): Promise<T> => {
@@ -90,6 +102,19 @@ interface SQLResult {
   columns: string[];
   rows: unknown[][];
   truncated: boolean;
+  snapshot?: SnapshotStatus;
+}
+export class SnapshotUnavailableError extends Error {
+  constructor(public code: string) {
+    super(code === "snapshot_resource_limit"
+      ? "The latest knowledge could not be prepared. The server needs attention; retry later."
+      : "The latest knowledge is still being prepared. Please retry shortly.");
+  }
+}
+function responseCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const value = error as { response?: { code?: string }; data?: { code?: string }; code?: string };
+  return value.response?.code ?? value.data?.code ?? value.code;
 }
 export class TruncatedQueryError extends Error {
   constructor() {
@@ -117,15 +142,46 @@ function windowSize(offset: number, limit: number): void {
     throw new Error("Invalid query page");
 }
 
-export async function query<T>(sql: string): Promise<T[]> {
+export async function query<T>(sql: string, consistency: "available" | "fresh" = "available"): Promise<T[]> {
   const initiatingToken = pb.authStore.token;
   const generation = sessionGeneration;
+  const deadline = Date.now() + (consistency === "fresh" ? 130000 : 30000);
+  let resetGeneration = false;
   try {
-    const result = await pb.send<SQLResult>("/api/context/query", {
-      method: "POST",
-      body: { sql },
-    });
+    let result: SQLResult;
+    for (;;) {
+      if (generation !== sessionGeneration) throw new Error("Session changed");
+      if (Date.now() >= deadline) throw new SnapshotUnavailableError("snapshot_pending");
+      try {
+        result = await pb.send<SQLResult>("/api/context/query", {
+          method: "POST",
+          body: { sql, consistency, ...(snapshots.current?.generation ? { atLeast: snapshots.current.generation } : {}) },
+          signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
+        });
+        break;
+      } catch (error) {
+        const code = responseCode(error);
+        if (generation !== sessionGeneration) throw new Error("Session changed");
+        if (code === "snapshot_generation_conflict" && !resetGeneration) {
+          // A restart or cache retirement can invalidate a minimum-generation
+          // token. Recheck through the same authenticated freshness contract.
+          resetGeneration = true;
+          clearReaderCache();
+          continue;
+        }
+        if (code === "snapshot_pending" && Date.now() < deadline) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          if (generation !== sessionGeneration) throw new Error("Session changed");
+          await snapshots.refresh();
+          continue;
+        }
+        if (code === "snapshot_pending" || code === "snapshot_resource_limit")
+          throw new SnapshotUnavailableError(code);
+        throw error;
+      }
+    }
     if (generation !== sessionGeneration) throw new Error("Session changed");
+    if (result.snapshot) snapshots.observe(snapshotStatus(result.snapshot));
     if (result.truncated) throw new TruncatedQueryError();
     return result.rows.map(
       (row) =>
@@ -142,7 +198,8 @@ export async function query<T>(sql: string): Promise<T[]> {
         pb.authStore.token === initiatingToken
       )
         pb.authStore.clear();
-      if (error.status === 413) throw new TruncatedQueryError();
+      if (error.status === 413 && (!responseCode(error) || responseCode(error) === "result_limit"))
+        throw new TruncatedQueryError();
     }
     throw error;
   }
@@ -230,6 +287,7 @@ export async function listSpaces(): Promise<Space[]> {
   if (!account) throw new Error("Please sign in to continue");
   const rows = await query<Space>(
     `SELECT s.id, s.kind, s.name, m.role FROM spaces s JOIN space_members m ON m.space=s.id WHERE m.account=${identity(account)} AND m.active=1 ORDER BY CASE s.id WHEN 'companyspace001' THEN 0 ELSE 1 END, s.name, s.id LIMIT 200`,
+    "fresh",
   );
   return rows.filter((row) => /^[a-z0-9]{15}$/.test(row.id) && (row.kind === "personal" || row.kind === "group"));
 }
@@ -241,20 +299,22 @@ export async function createPersonalSpace(): Promise<{ id: string }> {
   return pb.send("/api/wiki/spaces/personal", { method: "POST" });
 }
 export async function evidenceSpace(collection: "sources" | "passages", id: string): Promise<string | null> {
-  return (await query<{ space: string }>(`SELECT space FROM ${collection} WHERE id=${identity(id)} LIMIT 1`))[0]?.space ?? null;
+  return (await query<{ space: string }>(`SELECT space FROM ${collection} WHERE id=${identity(id)} LIMIT 1`, "fresh"))[0]?.space ?? null;
 }
 export async function listPublications(
   space: string,
   offset = 0,
   limit = 50,
+  consistency: "available" | "fresh" = "available",
 ): Promise<Publication[]> {
   windowSize(offset, limit);
   return query(
     `SELECT id, space, sequence, run, home, created FROM publications WHERE space=${identity(space)} ORDER BY sequence DESC LIMIT ${limit} OFFSET ${offset}`,
+    consistency,
   );
 }
 export async function latestPublication(space = companySpace): Promise<Publication | null> {
-  return (await listPublications(space, 0, 1))[0] ?? null;
+  return (await listPublications(space, 0, 1, "fresh"))[0] ?? null;
 }
 export async function getPublication(id: string): Promise<Publication | null> {
   identity(id);
@@ -262,6 +322,7 @@ export async function getPublication(id: string): Promise<Publication | null> {
     (
       await query<Publication>(
         `SELECT id, space, sequence, run, home, created FROM publications WHERE id=${identity(id)} LIMIT 1`,
+        "fresh",
       )
     )[0] ?? null
   ), publication => publication !== null);
@@ -321,11 +382,14 @@ export async function searchPages(
     hits: { id: string; score: number; excerpt: string }[];
     hasMore: boolean;
     truncated: boolean;
+    snapshot?: SnapshotStatus;
   };
   try {
-    result = await pb.send("/api/context/search", {
+    const search = () => pb.send<typeof result>("/api/context/search", {
       method: "POST",
       body: {
+        consistency: "available",
+        ...(snapshots.current?.generation ? { atLeast: snapshots.current.generation } : {}),
         index: "pages",
         query: term.trim(),
         scope: publicationId,
@@ -333,8 +397,20 @@ export async function searchPages(
         offset,
         ...(expectedGeneration ? { expectedGeneration } : {}),
       },
+      signal: AbortSignal.timeout(30000),
     });
+    try { result = await search(); }
+    catch (error) {
+      if (responseCode(error) !== "snapshot_generation_conflict") throw error;
+      clearReaderCache();
+      result = await search();
+    }
   } catch (error) {
+    const code = responseCode(error);
+    if (code === "snapshot_pending" || code === "snapshot_resource_limit") {
+      requestSnapshotRefresh();
+      throw new SnapshotUnavailableError(code);
+    }
     if (error && typeof error === "object" && "status" in error) {
       if (
         (error.status === 401 || error.status === 403) &&
@@ -348,6 +424,9 @@ export async function searchPages(
     }
     throw error;
   }
+  // Hydration must see at least the copy that supplied the search hits. The
+  // separate FTS fingerprint continues to pin pagination across unrelated writes.
+  if (result.snapshot) snapshots.observe(snapshotStatus(result.snapshot));
   if (
     result.index !== "pages" ||
     result.scope !== publicationId ||
@@ -610,7 +689,7 @@ export async function watchPublications(
   const generation = sessionGeneration;
   await realtimeCleanup;
   if (generation !== sessionGeneration || !pb.authStore.isValid) return () => {};
-  const notify = () => { if (generation === sessionGeneration) callback(); };
+  const notify = () => { if (generation === sessionGeneration) { requestSnapshotRefresh(); callback(); } };
   let subscribed = false;
   const unsubscribeConnected = await pb.realtime.subscribe(
     "PB_CONNECT",
@@ -655,4 +734,5 @@ export const api = {
   originalURL,
   previewURL,
   watchPublications,
+  watchSnapshotStatus,
 };

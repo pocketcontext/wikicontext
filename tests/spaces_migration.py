@@ -145,7 +145,7 @@ def main():
             admin = request('POST', '/api/collections/_superusers/auth-with-password', ADMIN)['token']
             token = request('POST', '/api/collections/users/auth-with-password', {'identity': 'active@example.test', 'password': PASSWORD})['token']
             def rows(sql):
-                result = request('POST', '/api/context/query', {'sql': sql}, token)
+                result = request('POST', '/api/context/query', {'sql': sql, 'consistency': 'fresh'}, token)
                 return [dict(zip(result['columns'], row)) for row in result['rows']]
             for table in DOMAIN:
                 assert rows(f"SELECT count(*) AS n FROM {table} WHERE space != 'companyspace001'") == [{'n': 0}]

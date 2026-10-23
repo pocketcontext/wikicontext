@@ -10,6 +10,7 @@ import {
   refreshSession,
   searchPages,
   SearchUnavailableError,
+  SnapshotUnavailableError,
   watchPublications,
   TruncatedQueryError,
 } from "./api";
@@ -37,6 +38,52 @@ afterEach(() => {
   clearReaderCache();
   vi.restoreAllMocks();
   pb.authStore.clear();
+  vi.useRealTimers();
+});
+
+describe("background SQL snapshots", () => {
+  const snapshot = { generation: "requester-generation", capturedAt: "2026-10-23T10:00:00Z",
+    refreshing: false, stale: false, rows: 10, diskBytes: 4096 };
+
+  it("carries a completed generation into subsequent reads without demanding an exact generation", async () => {
+    const send = vi.spyOn(pb, "send").mockResolvedValue({ ...response([]), snapshot });
+    await query("SELECT id FROM pages");
+    await query("SELECT id FROM sources");
+    expect(send.mock.calls[1][1]?.body).toEqual({ sql: "SELECT id FROM sources",
+      consistency: "available", atLeast: snapshot.generation });
+  });
+
+  it("waits for a cold copy without treating its status as an empty SQL result", async () => {
+    vi.useFakeTimers();
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const send = vi.spyOn(pb, "send")
+      .mockRejectedValueOnce({ status: 503, response: { code: "snapshot_pending" } })
+      .mockResolvedValueOnce(snapshot)
+      .mockResolvedValueOnce({ ...response([{ id: "ready" }]), snapshot });
+    const result = query("SELECT id FROM sources", "fresh");
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(result).resolves.toEqual([{ id: "ready" }]);
+    expect(send.mock.calls[1][0]).toBe("/api/context/snapshot");
+    expect(send.mock.calls[2][1]?.body.consistency).toBe("fresh");
+    expect(timeout).toHaveBeenCalledWith(129000);
+  });
+
+  it("does not reduce output pagination after a background resource failure", async () => {
+    const send = vi.spyOn(pb, "send").mockRejectedValue({ status: 503,
+      response: { code: "snapshot_resource_limit" } });
+    await expect(listPages(publication)).rejects.toBeInstanceOf(SnapshotUnavailableError);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("recovers a retired minimum generation once while keeping fresh consistency", async () => {
+    const send = vi.spyOn(pb, "send")
+      .mockResolvedValueOnce({ ...response([]), snapshot })
+      .mockRejectedValueOnce({ status: 409, response: { code: "snapshot_generation_conflict" } })
+      .mockResolvedValueOnce(response([{ id: "after-restart" }]));
+    await query("SELECT 1");
+    await expect(query("SELECT id FROM spaces", "fresh")).resolves.toEqual([{ id: "after-restart" }]);
+    expect(send.mock.calls[2][1]?.body).toEqual({ sql: "SELECT id FROM spaces", consistency: "fresh" });
+  });
 });
 
 describe("published knowledge reads", () => {
@@ -239,6 +286,7 @@ describe("published knowledge reads", () => {
         index: "pages",
         scope: publication,
         generation: "generation1",
+        snapshot: { generation: "copy-search", capturedAt: "2026-10-23T10:00:00Z", refreshing: false, stale: false, rows: 30, diskBytes: 8192 },
         hasMore: false,
         truncated: false,
         hits: [
@@ -256,6 +304,7 @@ describe("published knowledge reads", () => {
     );
     expect(send.mock.calls[1][0]).toBe("/api/context/search");
     expect(send.mock.calls[1][1]?.body).toEqual({
+      consistency: "available",
       index: "pages",
       scope: publication,
       query: "O'Brien %",
@@ -269,6 +318,7 @@ describe("published knowledge reads", () => {
       "pub.id='publication0001'",
     );
     expect(send.mock.calls[2][1]?.body.sql).toContain("r.id=m.value");
+    expect(send.mock.calls[2][1]?.body.atLeast).toBe("copy-search");
   });
   it("rejects hits missing from the selected publication", async () => {
     vi.spyOn(pb, "send")
@@ -303,6 +353,12 @@ describe("published knowledge reads", () => {
   it.each([[404, "not-found"], [413, "too-large"], [503, "unavailable"]])("describes private search availability failures (%s)", async (status, reason) => {
     vi.spyOn(pb, "send").mockResolvedValueOnce(validManifest()).mockRejectedValueOnce({ status });
     await expect(searchPages(publication, "word")).rejects.toMatchObject({ constructor: SearchUnavailableError, reason });
+  });
+
+  it("reports snapshot capacity separately from an oversized search result", async () => {
+    vi.spyOn(pb, "send").mockResolvedValueOnce(validManifest())
+      .mockRejectedValueOnce({ status: 503, response: { code: "snapshot_resource_limit" } });
+    await expect(searchPages(publication, "word")).rejects.toMatchObject({ constructor: SnapshotUnavailableError, code: "snapshot_resource_limit" });
   });
 
   it.each([
