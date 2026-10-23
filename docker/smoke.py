@@ -20,6 +20,7 @@ import sys
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -111,6 +112,9 @@ def run_app(image, name, volume, env, network=None, command=()):
 
 def http(method, url, body=None, token=None, headers=None):
     """Returns (status, headers, parsed JSON or text). Status 0 means no HTTP response."""
+    timeout = 130 if (method == 'POST' and isinstance(body, dict)
+        and body.get('consistency') == 'fresh'
+        and urllib.parse.urlsplit(url).path in ('/api/context/query', '/api/context/search')) else 15
     request = urllib.request.Request(url, method=method, data=None if body is None else json.dumps(body).encode())
     if body is not None:
         request.add_header('Content-Type', 'application/json')
@@ -119,7 +123,7 @@ def http(method, url, body=None, token=None, headers=None):
     for key, value in (headers or {}).items():
         request.add_header(key, value)
     try:
-        with urllib.request.urlopen(request, timeout=15) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             status, reply, raw = response.status, response.headers, response.read()
     except urllib.error.HTTPError as error:
         status, reply, raw = error.code, error.headers, error.read()
@@ -207,7 +211,8 @@ class Client:
         return json.dumps(body)
 
     def sql(self, query):
-        status, _, body = http('POST', self.base + '/api/context/query', {'sql': query}, token=self.token)
+        status, _, body = http('POST', self.base + '/api/context/query',
+            {'sql': query, 'consistency': 'fresh'}, token=self.token)
         check(status == 200, 'authenticated SQL query succeeded')
         return body['rows']
 
@@ -253,14 +258,15 @@ def check_records(client, document, metadata, space='companyspace001'):
         WHERE pub.space='{space}' AND p.slug='restore-{document}' AND r.archived=false ORDER BY pub.sequence DESC LIMIT 1""")
     check(len(selected) == 1, 'published revision survives persistence and restore')
     status, headers, results = http('POST', client.base + '/api/context/search',
-        {'index': 'pages', 'scope': selected[0][0], 'query': 'recoverycheck' + document}, token=client.token)
+        {'index': 'pages', 'scope': selected[0][0], 'query': 'recoverycheck' + document,
+         'consistency': 'fresh'}, token=client.token)
     check(status == 200 and bool(re.fullmatch(r'[0-9a-f]{64}', results.get('generation', '')))
           and results.get('scope') == selected[0][0]
           and [hit['id'] for hit in results.get('hits', [])] == [selected[0][1]]
           and not results.get('hasMore'), 'scoped FTS result and generation recovered')
     status, _, continuation = http('POST', client.base + '/api/context/search',
         {'index': 'pages', 'scope': selected[0][0], 'query': 'recoverycheck' + document,
-         'offset': 1, 'expectedGeneration': results['generation']}, token=client.token)
+         'offset': 1, 'expectedGeneration': results['generation'], 'consistency': 'fresh'}, token=client.token)
     check(status == 200 and continuation.get('generation') == results['generation']
           and continuation.get('hits') == [], 'restored search generation supports consistent pagination')
     collection, filename, evidence = metadata

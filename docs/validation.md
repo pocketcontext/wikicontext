@@ -58,3 +58,10 @@ the portable launcher was pinned to it and tested unchanged from an unrelated
 directory, including the full skill workflow with and without tracing. The
 launcher checks used the installed uv binary directly because the test's isolated
 home cannot resolve this host's asdf shim. Production has not been changed.
+
+Feature-branch CI passed the application suite on AMD64 and ARM64. Both container
+recovery jobs exposed a stale read in the smoke harness after creating personal
+space evidence. Its SQL and search verification now explicitly requests fresh
+copies with a 130-second transport timeout. The deployment regression reproduces
+the original failure and passes with this fix; all 10 deployment-workflow checks
+also pass. Main's native container gates must pass before publication/deployment.

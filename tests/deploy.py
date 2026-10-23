@@ -53,6 +53,11 @@ def main():
         client.run('check')
         organization, unused = smoke.write_record(client, user)
         smoke.check_records(client, organization, unused)
+        # Match populated S3 recovery: reuse an already-warm requester after
+        # creating a new personal space and publishing its first evidence.
+        personal = request('POST', '/api/wiki/spaces/personal', {}, client.token)['id']
+        private_document, private_metadata = smoke.write_record(client, user, space=personal)
+        smoke.check_records(client, private_document, private_metadata, space=personal)
     # Invalid provider/storage credentials fail closed on an empty database before serving.
     for values in [
         {'WIKICONTEXT_S3_BUCKET': 'synthetic-bucket'},
