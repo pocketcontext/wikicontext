@@ -50,3 +50,11 @@ artifact recovery using the CI-pinned Gemini package in an isolated environment;
 the host's optional `GEMINI_MODEL` override was unset for this two-model fixture.
 Container image/recovery gates and a live Google browser sign-in were not run as
 part of this source change.
+
+PocketContext's complete Go race suite and build passed, along with DealContext's
+integration, portable skill, deployment and intake regressions. After publishing
+client commit `80236fda59b7b406390bd5b39a41e3e1d4246e65` on the feature branch,
+the portable launcher was pinned to it and tested unchanged from an unrelated
+directory, including the full skill workflow with and without tracing. The
+launcher checks used the installed uv binary directly because the test's isolated
+home cannot resolve this host's asdf shim. Production has not been changed.
