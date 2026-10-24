@@ -24,6 +24,9 @@ now `pocketdeploy-v2`, and its PocketDeploy SSH key. `CONTEXT_DEPLOY_PAUSED=true
 disables deployment without disabling validation or image publication. The
 shared `once-pocketcontext-v2` dispatcher described below is no longer used
 by WikiContext.
+A manual `workflow_dispatch` of a commit that already published its
+`image-<sha>` release fails at `image-release` and skips deployment; release by
+pushing a new commit to main.
 
 Deployment sends no caller-selected remote command or registry credentials.
 Strict host-key checking and a dedicated forced-command key select the permitted
