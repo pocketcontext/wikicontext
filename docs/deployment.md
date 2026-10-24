@@ -3,7 +3,8 @@
 WikiContext is deployed at `wiki.pocketcontext.com`, using the public image
 `ghcr.io/pocketcontext/wikicontext`. See [the release record](../DEPLOYMENT.md) for
 source/digests, completed checks and remaining browser verification.
-The maintained `once-pocketcontext-v2` scaffold controls that hostname.
+The private `pocketdeploy-v2` scaffold controls that hostname; production moved there
+from `once-pocketcontext-v2` on 24 October 2026 by recovery from the replica.
 CI builds and exercises containers natively on AMD64 and ARM64. Publication on main
 requires both architecture checks (configuration, smoke and S3/Litestream recovery) and
 the full application test suite on both architectures. Release archive access follows
@@ -51,7 +52,7 @@ bucket `wikicontext-files` for source originals. Set `LITESTREAM_BUCKET`,
 `WIKICONTEXT_S3_ACCESS_KEY_ID` and `WIKICONTEXT_S3_SECRET_ACCESS_KEY`;
 `WIKICONTEXT_S3_FORCE_PATH_STYLE` defaults to `true`.
 Use separate credentials for originals and replicas. Never reuse sibling replicas.
-Keep credentials only in the maintained `once-pocketcontext-v2` scaffold's private
+Keep credentials only in the `pocketdeploy-v2` scaffold's private
 configuration. Gemini transcription credentials belong to the ingestion agent.
 
 The container requires both services and enables `WIKICONTEXT_RATE_LIMITS=true`.
@@ -137,10 +138,11 @@ container. Removing runtime support does not authorize archive or volume deletio
 
 ## Updates
 
-Disable ONCE automatic updates. The maintained `once-pocketcontext-v2` scaffold
-owns production provisioning and deployment configuration. Its fixed-target update
-wrapper must lock, verify the exact application/image, pull, gracefully stop the
-sole writer, and update only that target. Never use an overlapping ONCE update.
+Disable ONCE automatic updates. The `pocketdeploy-v2` scaffold owns production
+provisioning and deployment configuration, with a stop-first policy that gracefully
+stops the sole writer before replacing it. ONCE v0.3.3 waits a fixed 120 seconds for
+readiness, so remote original verification runs in parallel
+(`WIKICONTEXT_VERIFY_CONCURRENCY`). Never use an overlapping ONCE update.
 The older `deploy/bootstrap-wikicontext.py` is retired and always refuses execution;
 it hardcoded the obsolete local-file replica target. `init` initializes application
 storage only and does not provision cloud resources or change deployment policy.

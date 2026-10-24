@@ -504,7 +504,7 @@ verifies complete off-host recovery independently of Litestream replication.
 ## Historical object-storage experiment
 
 The separate experiment workflow has been removed. Production uses only the
-main-only `once-v2` environment and common guarded release workflow. The retained
+main-only `pocketdeploy-v2` environment and common guarded release workflow. The retained
 verification tools below are historical operator tools, not automatic deployment
 paths or authorization to modify a live service. See the
 [common CI and deployment contract](docs/ci-and-deployment.md).
