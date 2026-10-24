@@ -226,3 +226,5 @@ loopback-container option preserves existing deployment authority and tests data
 migration/recovery; it must not be confused with provisioning a new PocketDeploy
 identity or testing ONCE application adoption. No raw production ONCE archive is
 used as a clone configuration.
+The host was retired on 24 October 2026 and the shared-host option was removed
+without having run.

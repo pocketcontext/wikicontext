@@ -13,6 +13,7 @@ import uuid
 import io
 import tarfile
 import re
+import stat
 
 DIND = 'docker.io/library/docker@sha256:2a232a42256f70d78e3cc5d2b5d6b3276710a0de0596c145f627ecfae90282ac'
 LABEL = 'com.pocketcontext.local-once-rehearsal'
@@ -24,6 +25,38 @@ def run(args, *, data=None, timeout=600):
     if result.returncode:
         raise RuntimeError('isolated Docker operation failed; raw output suppressed')
     return result.stdout
+
+
+def private_json(path):
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_uid != os.getuid() or info.st_nlink != 1:
+        raise ValueError("Owned mode-0600 regular JSON required")
+    return json.loads(path.read_text())
+
+
+def verify_prepared(directory, scope):
+    if directory.is_symlink() or not directory.is_dir(): raise RuntimeError("Prepared directory required")
+    receipt_path = directory.parent / (directory.name + ".preparation.json")
+    if receipt_path.is_symlink() or not receipt_path.is_file(): raise RuntimeError("Preparation receipt required")
+    receipt = json.loads(receipt_path.read_text())
+    if receipt.get("version") != 1 or receipt.get("maintenance") != "writable" or not receipt.get("source_unchanged") or not receipt.get("copied_sessions_revoked") or not receipt.get("domain_unchanged") or not receipt.get("original_files_unchanged") or receipt.get("network_isolation") != "new-loopback-only-namespace":
+        raise RuntimeError("Preparation receipt incomplete")
+    expected = receipt.get("prepared_files")
+    if not isinstance(expected, dict) or "data.db" not in expected: raise RuntimeError("Prepared file manifest required")
+    found = {}; total = 0
+    for path in directory.rglob("*"):
+        info = path.lstat()
+        if stat.S_ISDIR(info.st_mode): continue
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1: raise RuntimeError("Prepared files must be regular unlinked files")
+        total += info.st_size
+        if total > scope["maxPreparedBytes"]: raise RuntimeError("Prepared data exceeds approved bound")
+        checksum = hashlib.sha256()
+        with path.open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""): checksum.update(block)
+        found[path.relative_to(directory).as_posix()] = checksum.hexdigest()
+    if found != expected: raise RuntimeError("Prepared file manifest changed")
+    if found["data.db"] != receipt.get("prepared_database_sha256"): raise RuntimeError("Prepared database receipt mismatch")
+    return total, receipt
 
 
 class Engine:
@@ -116,7 +149,6 @@ class Engine:
 
 def prepared_archive(engine, directory, destination, image, environment):
     """Package a validated prepared synthetic clone using ONCE v0.3.3 schema."""
-    from shared_host_remote import verify_prepared
     from prepare_config import BINDINGS
     if not re.fullmatch(r"[^\s]+@sha256:[0-9a-f]{64}", image):
         raise ValueError("immutable registry image required")
@@ -271,7 +303,6 @@ def main():
         if args.action == 'status':
             print(json.dumps(engine.inspect()))
         elif args.action == 'pack':
-            from shared_host import private_json
             if not all((args.prepared_dir, args.private_env, args.archive, args.image)):
                 parser.error('pack requires prepared directory, private environment, new archive and old image')
             engine.inspect()

@@ -63,7 +63,11 @@ old image independently of rolling replica retention until rollback is explicitl
 released. Database PITR alone does not restore auxiliary files, maintenance state
 or externally deleted originals.
 
-## Reusing pocketdeploy-v1
+## Reusing pocketdeploy-v1 (historical)
+
+This section and the shared-host requirements below are historical. The host was
+retired on 24 October 2026 without this rehearsal having run on it, and the
+shared-host tooling was removed from `deploy/rehearsal/`.
 
 The deployment repository identifies an existing OCI A1 host in Frankfurt with
 one CPU, 6 GiB RAM and a 50 GiB boot disk. It currently declares the public Vault
@@ -140,8 +144,8 @@ production recovery. The local safe receipt is
   fresh maintenance authentication, API thaw, database integrity, unchanged domain
   records/originals, revoked copied sessions and rejected credential reuse.
 - [Rehearsal controls](../deploy/rehearsal/README.md) provide isolated configuration
-  and a shared-host loopback container lifecycle through pinned PocketDeploy SSH.
-  Seventeen focused tests cover configuration, shared-host and local ONCE lifecycle boundaries. A real synthetic Docker test
+  and, at the time, a shared-host loopback container lifecycle through pinned PocketDeploy SSH
+  (since removed). Seventeen focused tests covered configuration, shared-host and local ONCE lifecycle boundaries. A real synthetic Docker test
   verified loopback access, absent ONCE registration and denial from a peer bridge.
 - Candidate publication tests, production workflow checks and actionlint passed.
   The complete new shared-host old-image/candidate lifecycle has not yet run

@@ -1,3 +1,4 @@
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -11,6 +12,23 @@ spec.loader.exec_module(m)
 
 
 class LocalOnceTests(unittest.TestCase):
+    def test_prepared_directory_rejects_links_and_changed_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            data = Path(tmp) / 'prepared'; data.mkdir()
+            (data / 'data.db').write_bytes(b'synthetic database')
+            digest = hashlib.sha256(b'synthetic database').hexdigest()
+            receipt = {'version': 1, 'maintenance': 'writable', 'network_isolation': 'new-loopback-only-namespace', 'source_unchanged': True, 'domain_unchanged': True, 'original_files_unchanged': True, 'copied_sessions_revoked': True, 'prepared_files': {'data.db': digest}, 'prepared_database_sha256': digest}
+            (Path(tmp) / 'prepared.preparation.json').write_text(json.dumps(receipt))
+            scope = {'maxPreparedBytes': 100000}
+            self.assertEqual(m.verify_prepared(data, scope)[0], len(b'synthetic database'))
+            (data / 'symlink').symlink_to(data / 'data.db')
+            with self.assertRaisesRegex(RuntimeError, 'regular'):
+                m.verify_prepared(data, scope)
+            (data / 'symlink').unlink()
+            (data / 'data.db').write_bytes(b'modified')
+            with self.assertRaisesRegex(RuntimeError, 'manifest'):
+                m.verify_prepared(data, scope)
+
     def test_binary_checksum_before_docker(self):
         with tempfile.TemporaryDirectory() as root:
             binary = Path(root) / 'once'
