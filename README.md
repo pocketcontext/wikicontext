@@ -456,8 +456,11 @@ handshake. This closes Litestream 0.5.17's early-stop gap: before its first moni
 tick, an uninitialized database otherwise skips final replication on shutdown. It never restores the legacy complete archive,
 and no archive scheduler runs. Before opening the server, it streams every original
 referenced by SQLite from S3 and verifies its recorded SHA-256. Missing, corrupt or
-inaccessible evidence refuses startup. This costs a full evidence read on restart;
-measure duration and allow sufficient ONCE startup time. Other PocketBase file
+inaccessible evidence refuses startup. This costs a full evidence read on every
+start, including restarts on an existing volume, so originals are downloaded in
+parallel (`WIKICONTEXT_VERIFY_CONCURRENCY`, 1–64, default 16) to become ready
+within ONCE's fixed 120-second deployment wait; the first failure refuses
+startup. Measure duration as evidence grows. Other PocketBase file
 fields use the same storage backend; the integrity gate specifically covers sources.
 
 Setting S3 does not migrate existing local files. Use the verified file-copy
