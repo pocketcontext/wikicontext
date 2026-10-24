@@ -57,7 +57,7 @@ class IngestionTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.cfg = {'url': 'http://127.0.0.1:12345', 'email': 'synthetic@example.test'}
         self.store = EvidenceStore()
-        for patcher in [patch.dict(os.environ, {'XDG_CACHE_HOME': str(self.root / 'cache')}),
+        for patcher in [patch.dict(os.environ, {'XDG_CACHE_HOME': str(self.root / 'cache'), 'XDG_STATE_HOME': str(self.root / 'state'), 'WIKICONTEXT_SESSION_DIR': ''}),
                         patch.object(ingest, 'rows', self.store.query), patch.object(ingest, 'upload_source', self.store.upload),
                         patch.object(ingest.wc, 'must', self.store.create),
                         patch.object(ingest.wc, 'space_id', return_value=SPACE)]:

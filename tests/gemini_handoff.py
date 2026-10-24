@@ -128,7 +128,7 @@ def check_pipeline(args,pipeline):
         audio=root/'synthetic.wav'
         originals={'audio':audio.read_bytes(),'manifest':manifest_path.read_bytes()}
         originals.update({a['role']:(manifest_path.parent/a['path']).read_bytes() for a in manifest['artifacts']})
-        with server(args.binary) as request, patch.dict(os.environ,{'XDG_CACHE_HOME':str(root/'cache')}):
+        with server(args.binary) as request, patch.dict(os.environ,{'XDG_CACHE_HOME':str(root/'cache'),'XDG_STATE_HOME':str(root/'state'),'WIKICONTEXT_SESSION_DIR':''}):
             _,_,token=credentials(request)
             cfg={'url':request.base_url,'email':'agent@example.com','password':'SyntheticUserPassword123!'}
             wc.save_session(cfg,{'url':cfg['url'],'email':cfg['email'],'token':token})

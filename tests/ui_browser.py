@@ -16,6 +16,7 @@ import tempfile
 import threading
 import urllib.request
 import urllib.error
+from unittest.mock import patch
 
 from integration import ROOT, credentials, server
 from wikicontext_client.ingest import multipart
@@ -82,7 +83,9 @@ def seed(request):
             from wikicontext_client.transcript_bundle import ARTIFACT_FORMATS
             request('PATCH', '/api/settings', {'rateLimits': {'enabled': False}}, admin)
             cfg = {'url': request.base_url, 'email': 'agent@example.com', 'password': 'SyntheticUserPassword123!'}
-            with tempfile.TemporaryDirectory(prefix='wiki-browser-audio-') as temporary:
+            with tempfile.TemporaryDirectory(prefix='wiki-browser-audio-') as temporary, \
+                    patch.dict(os.environ, {'XDG_CACHE_HOME': str(Path(temporary) / 'cache'), 'XDG_STATE_HOME': str(Path(temporary) / 'state'),
+                                            'WIKICONTEXT_SESSION_DIR': ''}):
                 root = Path(temporary)
                 audio, manifest, metadata = fixture(root)
                 analysis = {'schema_version': 'gemini-transcribe.analysis/v1',

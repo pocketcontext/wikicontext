@@ -70,7 +70,7 @@ def main():
             return create('citations', {'page_revision': rev['id'], 'passage': passage, 'marker': '1'})
         source = Path(folder)/'evidence.txt'
         source.write_bytes(b'Synthetic provider observation.\r\nCopyright synthetic example.\r\n')
-        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder}):
+        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder, 'XDG_STATE_HOME': str(Path(folder) / 'state'), 'WIKICONTEXT_SESSION_DIR': ''}):
             ingest.ingest({'url': request.base_url, 'email': 'agent@example.com', 'password': 'SyntheticUserPassword123!'}, source)
         passage = query('SELECT id FROM passages LIMIT 1')[0]['id']
         target = create('pages', {'slug': 'deployment', 'kind': 'entity'})
@@ -178,7 +178,7 @@ def main():
         publish(staged)
         export_sequence = query('SELECT sequence FROM publications ORDER BY sequence DESC LIMIT 1')[0]['sequence']
         cfg = {'url': request.base_url, 'email': 'agent@example.com', 'password': 'SyntheticUserPassword123!'}
-        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder}):
+        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder, 'XDG_STATE_HOME': str(Path(folder) / 'state'), 'WIKICONTEXT_SESSION_DIR': ''}):
             output = Path(folder)/'COPYRIGHT.review'
             receipt = repository_files.export(cfg, destination['id'], output, export_sequence)
             assert output.read_bytes() == source.read_bytes()
@@ -252,7 +252,7 @@ def main():
         publish(staged)
         old_sync = json.loads(query("SELECT properties FROM page_revisions WHERE id='%s'" % unknown['id'])[0]['properties'])
         assert old_sync['synced_destination_revision'] == dest_rev['id']
-        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder}):
+        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder, 'XDG_STATE_HOME': str(Path(folder) / 'state'), 'WIKICONTEXT_SESSION_DIR': ''}):
             old_content, old_receipt = repository_files.render(cfg, destination['id'], export_sequence)
             current_sequence = query('SELECT sequence FROM publications ORDER BY sequence DESC LIMIT 1')[0]['sequence']
             new_content, new_receipt = repository_files.render(cfg, destination['id'], current_sequence)
@@ -269,14 +269,14 @@ def main():
         link(md_target, markdown)
         publish(staged)
         markdown_sequence = query('SELECT sequence FROM publications ORDER BY sequence DESC LIMIT 1')[0]['sequence']
-        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder}):
+        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder, 'XDG_STATE_HOME': str(Path(folder) / 'state'), 'WIKICONTEXT_SESSION_DIR': ''}):
             md_content, md_receipt = repository_files.render(cfg, markdown_destination['id'], markdown_sequence)
             assert md_content == b'# Synthetic README\n\nInstructions.'
         staged = run('changed-repository-markdown')
         clean_next = revision(staged, markdown, clean['id'], properties={'catalog_type': 'repository_document', 'document_type': 'readme', 'output_mode': 'markdown'}, evidence={'document_type': ['1']}, body='# Revised README\n')
         cite(clean_next)
         publish(staged)
-        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder}):
+        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder, 'XDG_STATE_HOME': str(Path(folder) / 'state'), 'WIKICONTEXT_SESSION_DIR': ''}):
             assert repository_files.render(cfg, markdown_destination['id'], markdown_sequence)[0] == md_content
             latest = query('SELECT sequence FROM publications ORDER BY sequence DESC LIMIT 1')[0]['sequence']
             assert repository_files.render(cfg, markdown_destination['id'], latest)[0] == b'# Revised README\n'
@@ -294,7 +294,7 @@ def main():
         publish(staged)
         assert json.loads(query("SELECT properties FROM page_revisions WHERE id='%s'" % doc_rev['id'])[0]['properties']) == document_props
         latest = query('SELECT sequence FROM publications ORDER BY sequence DESC LIMIT 1')[0]['sequence']
-        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder}):
+        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder, 'XDG_STATE_HOME': str(Path(folder) / 'state'), 'WIKICONTEXT_SESSION_DIR': ''}):
             content, receipt = repository_files.render(cfg, destination['id'], latest)
             assert content == source.read_bytes()
             assert receipt['document_revision'] == prompt_rev['id']
@@ -317,13 +317,13 @@ def main():
         cite(md_prompt)
         publish(staged)
         latest = query('SELECT sequence FROM publications ORDER BY sequence DESC LIMIT 1')[0]['sequence']
-        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder}):
+        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder, 'XDG_STATE_HOME': str(Path(folder) / 'state'), 'WIKICONTEXT_SESSION_DIR': ''}):
             assert repository_files.render(cfg, markdown_destination['id'], latest)[0] == prompt_body.encode()
 
         # Audio catalogs bind immutable originals and keep publication selection explicit.
         import hashlib
         audio_bytes = b'Synthetic audio fixture (never sent to a provider)'
-        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder}):
+        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder, 'XDG_STATE_HOME': str(Path(folder) / 'state'), 'WIKICONTEXT_SESSION_DIR': ''}):
             audio = ingest.upload_source(cfg, Path('synthetic.wav'), audio_bytes,
                                          hashlib.sha256(audio_bytes).hexdigest(), 'Synthetic audio')
         audio_page = create('pages', {'slug': 'audio-recording', 'kind': 'entity'})

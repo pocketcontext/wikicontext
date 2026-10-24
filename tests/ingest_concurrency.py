@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Synthetic HTTP concurrency and committed-response-loss ingestion checks."""
 import argparse
+import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import tempfile
@@ -16,7 +17,9 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--binary', required=True)
     args = parser.parse_args()
-    with server(args.binary) as request, tempfile.TemporaryDirectory(prefix='wiki-ingest-concurrency-') as folder:
+    with server(args.binary) as request, tempfile.TemporaryDirectory(prefix='wiki-ingest-concurrency-') as folder, \
+            patch.dict(os.environ, {'XDG_CACHE_HOME': str(Path(folder) / 'cache'), 'XDG_STATE_HOME': str(Path(folder) / 'state'),
+                                    'WIKICONTEXT_SESSION_DIR': ''}):
         credentials(request)
         cfg = {'url': request.base_url, 'email': 'agent@example.com', 'password': 'SyntheticUserPassword123!'}
         # Initialize authentication before sharing the ordinary client with workers.

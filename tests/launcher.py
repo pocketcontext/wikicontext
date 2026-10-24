@@ -21,6 +21,7 @@ with tempfile.TemporaryDirectory(prefix=APP + '-launcher-') as tmp:
     target.chmod(0o755)
     env = {k: v for k, v in os.environ.items() if not k.startswith(APP.upper() + '_')}
     env['XDG_CACHE_HOME'] = str(Path(tmp) / 'private-cache')
+    env['XDG_STATE_HOME'] = str(Path(tmp) / 'private-state')
     for args, expected in [(['--help'], 0), (['whoami'], 2)]:
         result = subprocess.run([shutil.which('uv') or 'uv', 'run', '--script', str(target), *args],
                                 cwd=tmp, env=env, text=True, capture_output=True)

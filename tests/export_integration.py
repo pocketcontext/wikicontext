@@ -22,7 +22,7 @@ def main():
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix='wikicontext-export-test-') as temp, server(args.binary) as request:
         folder = Path(temp)
-        env = dict(os.environ, XDG_CACHE_HOME=str(folder / 'cache'), WIKICONTEXT_URL=request.base_url,
+        env = dict(os.environ, XDG_CACHE_HOME=str(folder / 'cache'), XDG_STATE_HOME=str(folder / 'state'), WIKICONTEXT_SESSION_DIR='', WIKICONTEXT_URL=request.base_url,
                    WIKICONTEXT_USER_EMAIL='agent@example.com', WIKICONTEXT_USER_PASSWORD='SyntheticUserPassword123!')
         with patch.dict(os.environ, env):
             admin, user, token = credentials(request)

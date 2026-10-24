@@ -26,7 +26,7 @@ def main():
     with server(args.binary) as request, tempfile.TemporaryDirectory(prefix='wikicontext-ingest-test-') as folder:
         admin, user, token = credentials(request)
         cfg = {'url': request.base_url, 'email': 'agent@example.com', 'password': 'SyntheticUserPassword123!'}
-        with patch.dict(os.environ, {'XDG_CACHE_HOME': str(Path(folder) / 'cache')}):
+        with patch.dict(os.environ, {'XDG_CACHE_HOME': str(Path(folder) / 'cache'), 'XDG_STATE_HOME': str(Path(folder) / 'state'), 'WIKICONTEXT_SESSION_DIR': ''}):
             source = Path(folder) / 'synthetic-notes.md'
             content = ('Synthetic cited evidence.\n' * 3000).encode()
             source.write_bytes(content)

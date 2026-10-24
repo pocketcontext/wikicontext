@@ -27,7 +27,7 @@ def main():
             assert not result['truncated']
             return [dict(zip(result['columns'], row)) for row in result['rows']]
         cfg = {'url': request.base_url, 'email': 'agent@example.com', 'password': 'SyntheticUserPassword123!'}
-        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder}):
+        with patch.dict(os.environ, {'XDG_CACHE_HOME': folder, 'XDG_STATE_HOME': str(Path(folder) / 'state'), 'WIKICONTEXT_SESSION_DIR': ''}):
             source = Path(folder) / 'synthetic-source.txt'
             source.write_text('Synthetic source supporting the test claim.')
             evidence = ingest.ingest(cfg, source)

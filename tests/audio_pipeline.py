@@ -25,7 +25,7 @@ class AudioPipelineTests(unittest.TestCase):
         self.calls = []
         self.fail = False
         self.imports = patch.object(transcript_bundle, 'import_bundle', return_value={'status': 'extracted', 'source': 'synthetic'})
-        for p in (patch.dict(os.environ, {'XDG_CACHE_HOME': str(self.root / 'cache'), 'GEMINI_API_KEY': 'synthetic'}),
+        for p in (patch.dict(os.environ, {'XDG_CACHE_HOME': str(self.root / 'cache'), 'XDG_STATE_HOME': str(self.root / 'state'), 'WIKICONTEXT_SESSION_DIR': '', 'GEMINI_API_KEY': 'synthetic'}),
                   patch.object(ap.wc, 'space_id', return_value='companyspace001'),
                   patch.object(ingest, 'rows', side_effect=lambda cfg, sql: [{'role': 'editor'}] if 'space_members' in sql else []),
                   patch.object(ap.wc, 'must', return_value={'record': {'id': 'testaccount0001'}}), patch.object(ap.shutil, 'which', return_value='/synthetic/tool'),

@@ -146,7 +146,7 @@ wikicontext lint
 wikicontext export-obsidian /path/to/vault
 ```
 
-Over SSH, forward the CLI loopback port from your browser computer with `ssh -L 8765:127.0.0.1:8765 user@host`. The authentication cache contains only the application token with private permissions. `logout` removes that token cache; it does not revoke copies elsewhere or remove the separate private audio and extraction caches.
+Over SSH, forward the CLI loopback port from your browser computer with `ssh -L 8765:127.0.0.1:8765 user@host`. The session file contains only the application token with private permissions. It lives in `$XDG_STATE_HOME/wikicontext/` (default `~/.local/state/wikicontext/`), or in `WIKICONTEXT_SESSION_DIR` when set, so clearing `~/.cache` does not sign you out; a session left in `~/.cache/wikicontext/` by an older client is moved there on first use. `logout` removes both session files; it does not revoke copies elsewhere or remove the separate private audio and extraction caches, which stay under `$XDG_CACHE_HOME/wikicontext/`.
 
 Commands default to Company unless `--space ID` or `WIKICONTEXT_SPACE` explicitly
 selects another readable space. Creating a personal space does not change that

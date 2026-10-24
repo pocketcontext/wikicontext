@@ -46,7 +46,7 @@ def main():
                          properties=properties or {}))
             create('citations', dict(page_revision=rev['id'], passage=passage, marker='1'))
             return rev
-        with patch.dict(os.environ, {'XDG_CACHE_HOME': str(root / 'cache')}):
+        with patch.dict(os.environ, {'XDG_CACHE_HOME': str(root / 'cache'), 'XDG_STATE_HOME': str(root / 'state'), 'WIKICONTEXT_SESSION_DIR': ''}):
             result = ingest.ingest(cfg, audio, audio_storage='original', transcript_bundle=manifest, version='warning-v1')
             assert result['timing_review']['status'] == 'required'
             passage = result['segment_passages']['seg000001'][0]

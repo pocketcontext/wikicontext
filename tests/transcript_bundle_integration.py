@@ -28,7 +28,7 @@ def main():
         data = json.dumps(t).encode(); transcript.write_bytes(data)
         m['artifacts'][0].update(sha256=hashlib.sha256(data).hexdigest(), size_bytes=len(data))
         manifest.write_text(json.dumps(m))
-        with patch.dict(os.environ, {'XDG_CACHE_HOME': str(root / 'cache')}), patch.object(ingest, 'prepare_audio', side_effect=AssertionError('No conversion')):
+        with patch.dict(os.environ, {'XDG_CACHE_HOME': str(root / 'cache'), 'XDG_STATE_HOME': str(root / 'state'), 'WIKICONTEXT_SESSION_DIR': ''}), patch.object(ingest, 'prepare_audio', side_effect=AssertionError('No conversion')):
             def run(): return ingest.ingest(cfg, audio, audio_storage='original', transcript_bundle=manifest, version='bundle-v1')
             real = wc.must
             def interrupted(cfg, method, url, body=None):
