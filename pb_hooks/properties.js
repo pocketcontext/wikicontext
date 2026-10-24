@@ -19,7 +19,7 @@ function validate(record){
   if(Array.isArray(value)){
    if(value.length>100||value.some(v=>typeof v!=='string'||v.length>2048)||new Set(value).size!==value.length)invalid('Property lists must contain up to 100 unique bounded strings');
   }else if(value!==null&&typeof value!=='boolean'&&!(typeof value==='string'&&value.length<=2048)&&!(typeof value==='number'&&Number.isFinite(value)&&Math.abs(value)<=Number.MAX_SAFE_INTEGER))invalid('Property values must be bounded scalars or string lists');
-  if(key==='catalog_type'&&!['resource','credential','deployment','person','group','repository_document','repository_destination','repository_sync','audio_recording'].includes(value))invalid('Invalid catalog_type');
+  if(key==='catalog_type'&&!['resource','credential','deployment','person','group','repository_document','repository_destination','repository_sync','audio_recording','incident'].includes(value))invalid('Invalid catalog_type');
   if(relationships.includes(key)&&(!Array.isArray(value)||value.some(v=>! /^[a-z0-9]{15}$/.test(v))))invalid('Relationship properties require page ID lists');
  }
  if(Object.prototype.hasOwnProperty.call(properties,'members')&&properties.catalog_type!=='group')invalid('Only group pages can declare members');
@@ -38,6 +38,20 @@ function validate(record){
   if(properties.recorded_at!=null){required('recorded_at',/^\d{4}-\d{2}-\d{2}$/);if(!Number.isFinite(Date.parse(properties.recorded_at))||new Date(properties.recorded_at).toISOString().slice(0,10)!==properties.recorded_at)invalid('Invalid recorded_at');}
   if(properties.language!=null&&(typeof properties.language!=='string'||!properties.language.trim()))invalid('Invalid language');
   if(properties.duration_seconds!=null&&(typeof properties.duration_seconds!=='number'||!Number.isFinite(properties.duration_seconds)||properties.duration_seconds<=0))invalid('Invalid duration_seconds');
+ }
+ for(const key of ['incident_kind','incident_status','rto_seconds','rpo_seconds'])if(Object.prototype.hasOwnProperty.call(properties,key)&&catalog!=='incident')invalid('Only incidents can declare '+key);
+ if(catalog==='incident'){
+  if(!['drill','incident'].includes(properties.incident_kind))invalid('Invalid incident_kind');
+  if(!['open','resolved'].includes(properties.incident_status))invalid('Invalid incident_status');
+  const instant=key=>{
+   required(key,/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/);
+   if(!Number.isFinite(Date.parse(properties[key]))||new Date(properties[key]).toISOString().replace('.000Z','Z')!==properties[key].replace('.000Z','Z'))invalid('Invalid '+key);
+   return Date.parse(properties[key]);
+  };
+  const started=instant('started_at');
+  if(properties.incident_status==='open'&&properties.resolved_at!=null)invalid('Open incidents cannot declare resolved_at');
+  if(properties.incident_status==='resolved'&&instant('resolved_at')<started)invalid('resolved_at precedes started_at');
+  for(const key of ['rto_seconds','rpo_seconds'])if(properties[key]!=null&&(!Number.isInteger(properties[key])||properties[key]<0))invalid('Invalid '+key);
  }
  if(catalog==='repository_document'){
   if(!['readme','license','copyright','notice','contributing','prompt','other'].includes(properties.document_type))invalid('Invalid document_type');

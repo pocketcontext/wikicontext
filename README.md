@@ -82,6 +82,8 @@ accountability, grants no permissions and sends no notifications. Nested groups
 and automatic CRM synchronization are outside scope. Agents maintain these
 relationships through cited revisions; properties are read-only in the browser.
 
+The Incidents catalog lists published `incident` entities (real incidents and drills) with kind, status, start time and measured recovery time/data loss, filterable by deployment. See the [incident model](docs/data-model.md#incidents).
+
 The Audio catalog groups recordings by published `audio_recording` entities. Each entry pins its selected Gemini bundle and links reviewed transcript/summary pages. Protected audio, transcript, generated analysis, translation and provenance remain evidence previews; timestamps are approximate. New imports do not silently change published selections. See [audio catalog workflow](skills/wikicontext/references/workflows.md#audio-recording-catalog).
 
 The reader defaults to Company. Choose **Create personal space** to opt in, then

@@ -53,6 +53,53 @@ const state: CatalogState = {
   offset: 0,
 };
 describe("published property catalogs", () => {
+  it("lists incidents, filters by deployment and sorts durations numerically", () => {
+    const incident = (page: string, title: string, rto?: number): PageSummary => ({
+      id: `${page}-revision`,
+      page,
+      title,
+      slug: page,
+      kind: "entity",
+      summary: "",
+      properties: {
+        catalog_type: "incident",
+        incident_kind: "drill",
+        incident_status: "resolved",
+        started_at: "2026-10-24T11:31:12Z",
+        resolved_at: "2026-10-24T11:33:00Z",
+        ...(rto === undefined ? {} : { rto_seconds: rto }),
+        deployment_profiles: [deployment.page],
+      },
+    });
+    const slow = incident("slow", "Slow recovery", 120);
+    const fast = incident("fast", "Fast recovery", 30);
+    const unknown = incident("unknown", "Unmeasured recovery");
+    const pages = [deployment, resource, slow, fast, unknown];
+    const incidents = { ...state, type: "incident" as const };
+    expect(filterCatalog(pages, incidents).map((page) => page.page)).toEqual([
+      "fast",
+      "slow",
+      "unknown",
+    ]);
+    expect(
+      filterCatalog(pages, { ...incidents, sort: "rto_seconds" }).map(
+        (page) => page.page,
+      ),
+    ).toEqual(["unknown", "fast", "slow"]);
+    expect(
+      filterCatalog(pages, { ...incidents, sort: "-rto_seconds" }).map(
+        (page) => page.page,
+      ),
+    ).toEqual(["slow", "fast", "unknown"]);
+    expect(
+      filterCatalog(pages, { ...incidents, deployment: "other" }),
+    ).toEqual([]);
+    render(<Catalog pages={pages} state={incidents} />);
+    expect(screen.getByRole("heading", { name: "Incidents" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Incidents" })).toBeTruthy();
+    expect(screen.getAllByText("Fast recovery").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Evidence bucket")).toBeNull();
+  });
   it("filters properties and relationship names without interpreting bodies or conflating unknown values", () => {
     const pages = [resource, deployment];
     expect(

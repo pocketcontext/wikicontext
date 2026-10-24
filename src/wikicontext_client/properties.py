@@ -41,7 +41,7 @@ def read(revision):
             if key in RELATIONSHIPS and (not isinstance(value, list) or
                     any(not re.fullmatch('[a-z0-9]{15}', item) for item in value)):
                 raise ValueError()
-            if key == 'catalog_type' and value not in ('resource', 'credential', 'deployment', 'person', 'group', 'repository_document', 'repository_destination', 'repository_sync', 'audio_recording'):
+            if key == 'catalog_type' and value not in ('resource', 'credential', 'deployment', 'person', 'group', 'repository_document', 'repository_destination', 'repository_sync', 'audio_recording', 'incident'):
                 raise ValueError()
         if 'members' in properties and properties.get('catalog_type') != 'group':
             raise ValueError()
@@ -85,6 +85,24 @@ def validate_repository(p):
             raise ValueError()
         if p.get('duration_seconds') is not None and (type(p['duration_seconds']) not in (int, float) or not math.isfinite(p['duration_seconds']) or p['duration_seconds'] <= 0):
             raise ValueError()
+    for key in ('incident_kind', 'incident_status', 'rto_seconds', 'rpo_seconds'):
+        if key in p and catalog != 'incident':
+            raise ValueError()
+    if catalog == 'incident':
+        if p.get('incident_kind') not in ('drill', 'incident') or p.get('incident_status') not in ('open', 'resolved'):
+            raise ValueError()
+
+        def instant(key):
+            required(key, r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z')
+            return datetime.datetime.fromisoformat(p[key].replace('Z', '+00:00'))
+        started = instant('started_at')
+        if p['incident_status'] == 'open' and p.get('resolved_at') is not None:
+            raise ValueError()
+        if p['incident_status'] == 'resolved' and instant('resolved_at') < started:
+            raise ValueError()
+        for key in ('rto_seconds', 'rpo_seconds'):
+            if p.get(key) is not None and (type(p[key]) is not int or p[key] < 0):
+                raise ValueError()
     if catalog == 'repository_document':
         if p.get('document_type') not in ('readme', 'license', 'copyright', 'notice', 'contributing', 'prompt', 'other') or p.get('output_mode') not in ('exact_copy', 'markdown'):
             raise ValueError()

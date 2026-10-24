@@ -187,7 +187,7 @@ history; run audit changes also record staging home fields, without copying page
 ## Catalog properties
 
 Keep a resource, credential, deployment, person or group as an `entity` page with stable identity.
-Add `properties.catalog_type` as `resource`, `credential`, `deployment`, `person`, or `group`. Read the
+Add `properties.catalog_type` as `resource`, `credential`, `deployment`, `incident`, `person`, or `group`. Read the
 published revision and full supporting passages before preparing a replacement;
 copy forward still-valid properties and property evidence explicitly. Revisions do
 not merge omitted fields. Use normal staging, base revision checks and publication.
@@ -211,6 +211,14 @@ Relationship keys `deployment_profiles`, `applications`, `resources`, `credentia
 `consumers`, `replaces`, `replaced_by` contain arrays of actual queried page IDs.
 Targets must be published and unarchived in the resulting publication. Create
 a matching page_links record for every relationship target, as for body wiki links.
+
+For incidents and drills, use `catalog_type: incident` with required
+`incident_kind` (`drill` or `incident`), `incident_status` (`open` or `resolved`)
+and `started_at`; resolved incidents add `resolved_at`. Record measured
+`rto_seconds` and `rpo_seconds` only from cited evidence, using null when not
+measured. Link affected deployments, resources and applications with the existing
+relationship keys, and keep the timeline, findings and follow-ups in the body.
+Link runbooks as ordinary page links rather than copying them into the record.
 
 For people, reuse existing entity identities after reviewing their published
 revisions and source evidence. Suggested fields are `role`, `organization` and

@@ -344,6 +344,28 @@ def main():
         publish(staged, 400)
         assert json.loads(query("SELECT properties FROM page_revisions WHERE id='%s'" % audio_rev['id'])[0]['properties']) == audio_props
 
+        incident_page = create('pages', {'slug': 'incident-drill', 'kind': 'entity'})
+        incident_props = {'catalog_type': 'incident', 'incident_kind': 'drill', 'incident_status': 'resolved',
+                          'started_at': '2026-10-24T11:31:12Z', 'resolved_at': '2026-10-24T11:33:00Z',
+                          'rto_seconds': 108, 'rpo_seconds': 0}
+        staged = run('incident-invalid')
+        for extra in ({'incident_kind': 'outage'}, {'incident_status': 'closed'}, {'started_at': '2026-10-24'},
+                      {'started_at': '2026-02-30T00:00:00Z'}, {'resolved_at': '2026-10-24T11:00:00Z'},
+                      {'incident_status': 'open'}, {'rto_seconds': -1}, {'rpo_seconds': 1.5}):
+            revision(staged, incident_page, properties={**incident_props, **extra}, expected=400)
+        missing = dict(incident_props); del missing['resolved_at']
+        revision(staged, incident_page, properties=missing, expected=400)
+        for key in ('incident_kind', 'incident_status', 'rto_seconds', 'rpo_seconds'):
+            revision(staged, incident_page, properties={'catalog_type': 'resource', key: incident_props[key]}, expected=400)
+        staged = run('incident-first')
+        open_props = {k: v for k, v in incident_props.items() if k != 'resolved_at'}
+        incident_rev = revision(staged, incident_page, properties={**open_props, 'incident_status': 'open'})
+        publish(staged)
+        staged = run('incident-resolved')
+        resolved_rev = revision(staged, incident_page, incident_rev['id'], incident_props)
+        publish(staged)
+        assert json.loads(query("SELECT properties FROM page_revisions WHERE id='%s'" % resolved_rev['id'])[0]['properties']) == incident_props
+
     print('PASS: revisioned properties, immutable history, conflict rollback, bounded metadata, property provenance and relationship graph')
 
 

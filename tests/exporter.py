@@ -171,6 +171,25 @@ class ExportTests(unittest.TestCase):
             with self.subTest(extra=extra), self.assertRaises(wc.Fail):
                 properties.read({'properties': {**good, **extra}})
 
+    def test_incident_catalog_properties(self):
+        from wikicontext_client import properties
+        good = {'catalog_type': 'incident', 'incident_kind': 'drill', 'incident_status': 'resolved',
+                'started_at': '2026-10-24T11:31:12Z', 'resolved_at': '2026-10-24T11:33:00.000Z',
+                'rto_seconds': 108, 'rpo_seconds': 0, 'deployment_profiles': ['d' * 15]}
+        self.assertEqual(properties.read({'properties': good})[0], good)
+        open_incident = {**good, 'incident_status': 'open'}
+        del open_incident['resolved_at']
+        self.assertEqual(properties.read({'properties': open_incident})[0], open_incident)
+        for extra in ({'incident_kind': 'outage'}, {'incident_status': 'closed'}, {'started_at': '2026-10-24'},
+                      {'started_at': '2026-02-30T00:00:00Z'}, {'resolved_at': '2026-10-24T11:00:00Z'},
+                      {'resolved_at': None}, {'incident_status': 'open'}, {'rto_seconds': -1},
+                      {'rpo_seconds': 1.5}, {'rto_seconds': True}):
+            with self.subTest(extra=extra), self.assertRaises(wc.Fail):
+                properties.read({'properties': {**good, **extra}})
+        for key in ('incident_kind', 'incident_status', 'rto_seconds', 'rpo_seconds'):
+            with self.subTest(key=key), self.assertRaises(wc.Fail):
+                properties.read({'properties': {'catalog_type': 'resource', key: good[key]}})
+
     def test_invalid_properties_rejected(self):
         from wikicontext_client import properties
         for value in [{'title': 'override'}, {'nested': {'x': 1}}, {'resources': ['missing']},

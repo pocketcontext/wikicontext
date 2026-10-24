@@ -126,7 +126,7 @@ Properties belong to immutable revisions, so publication, conflict checks, histo
 and export select exactly the same values as the page body. Older revisions have
 empty properties. No migration classifies or rewrites existing wiki content.
 Use `catalog_type` (`resource`, `credential`, `deployment`, `person`, `group`,
-`repository_document`, `repository_destination`, `repository_sync`, or `audio_recording`) on entity pages to
+`repository_document`, `repository_destination`, `repository_sync`, `audio_recording`, or `incident`) on entity pages to
 opt into the catalog reader. Other page kinds and uncategorized pages still work.
 
 `properties` is a JSON object of at most 64 lowercase snake_case keys (1–64 ASCII
@@ -240,6 +240,19 @@ preview/copy/download is bounded to 8 MiB of UTF-8 text; Markdown
 comes from the selected revision, following the repository export markup rules.
 Descriptions and provenance remain outside the copied text. Prompts never execute
 inside WikiContext and do not authorize actions merely by being read or copied.
+
+### Incidents
+
+An `incident` entity records one real incident or rehearsal drill. Required
+`incident_kind` is `drill` or `incident`, `incident_status` is `open` or
+`resolved`, and `started_at` is an ISO UTC instant (`YYYY-MM-DDTHH:MM:SSZ`,
+optional milliseconds). Resolved incidents require `resolved_at`, which cannot
+precede `started_at`; open incidents cannot declare it. Optional `rto_seconds`
+and `rpo_seconds` are non-negative integers for measured recovery time and data
+loss; null means unmeasured. These four incident keys are rejected on other
+catalog types. Affected systems use the existing `deployment_profiles`,
+`resources` and `applications` relationships, and ownership uses
+`accountable_owners`. Timeline, findings and caveats stay in the cited body.
 
 ### Audio recordings
 

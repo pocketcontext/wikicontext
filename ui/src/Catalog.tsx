@@ -16,6 +16,7 @@ export const catalogTypes = [
   "resource",
   "credential",
   "deployment",
+  "incident",
   "person",
   "group",
   "repository_document",
@@ -26,6 +27,7 @@ export const catalogLabels = {
   resource: "Resources",
   credential: "Credentials",
   deployment: "Deployments",
+  incident: "Incidents",
   person: "People",
   group: "Groups",
   repository_document: "Repository files",
@@ -92,6 +94,14 @@ const columns: Record<CatalogType, string[]> = {
     "resources",
     "accountable_owners",
   ],
+  incident: [
+    "incident_kind",
+    "incident_status",
+    "started_at",
+    "rto_seconds",
+    "rpo_seconds",
+    "deployment_profiles",
+  ],
 };
 export function filterCatalog(
   pages: PageSummary[],
@@ -153,10 +163,17 @@ export function filterCatalog(
       const key = state.sort.replace(/^-/, "");
       const av = key === "title" ? a.title : scalar(a, key),
         bv = key === "title" ? b.title : scalar(b, key);
+      // Durations sort numerically; unrecorded values sort before zero.
+      const seconds = (page: PageSummary) => {
+        const value = page.properties?.[key];
+        return typeof value === "number" ? value : -1;
+      };
       return (
         ((key.startsWith("owned_")
           ? Number(av) - Number(bv)
-          : av.localeCompare(bv)) || a.slug.localeCompare(b.slug)) *
+          : key.endsWith("_seconds")
+            ? seconds(a) - seconds(b)
+            : av.localeCompare(bv)) || a.slug.localeCompare(b.slug)) *
         (descending ? -1 : 1)
       );
     });
