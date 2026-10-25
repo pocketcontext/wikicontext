@@ -39,8 +39,6 @@ jobs:
         run: python3 -B -m unittest discover -s wikicontext/deploy/rehearsal/tests
       - name: Test immutable-file migration tooling
         run: python3 wikicontext/tests/migrate_files.py
-      - name: Test retired bootstrap refusal
-        run: python3 wikicontext/tests/bootstrap.py
       - name: Test Python container startup and verification
         run: python3 wikicontext/tests/entrypoint.py
       - name: Install audio and image ingestion test tools

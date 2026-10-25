@@ -359,7 +359,6 @@ python3 tests/transcript_bundle_integration.py --binary /absolute/path/to/pinned
 python3 tests/timing_review.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/exporter.py
 python3 tests/repository_files.py
-python3 tests/bootstrap.py
 python3 tests/deploy_workflow.py
 ```
 

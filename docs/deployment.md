@@ -143,9 +143,8 @@ provisioning and deployment configuration, with a stop-first policy that gracefu
 stops the sole writer before replacing it. ONCE v0.3.3 waits a fixed 120 seconds for
 readiness, so remote original verification runs in parallel
 (`WIKICONTEXT_VERIFY_CONCURRENCY`). Never use an overlapping ONCE update.
-The older `deploy/bootstrap-wikicontext.py` is retired and always refuses execution;
-it hardcoded the obsolete local-file replica target. `init` initializes application
-storage only and does not provision cloud resources or change deployment policy.
+`init` initializes application storage only and does not provision cloud resources
+or change deployment policy.
 
 For the spaces migration, review the [predeployment recovery and disposable-clone
 assessment](predeployment-recovery.md) before publishing or deploying. A PocketDeploy
