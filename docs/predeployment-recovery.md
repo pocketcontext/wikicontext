@@ -23,7 +23,7 @@ raw ONCE settings, content or file tokens in the receipt.
 | Mechanism | Included | Limits and appropriate use |
 | --- | --- | --- |
 | Litestream 0.5.17 | Continuous replica of `data.db`; restore by timestamp or inclusive transaction ID | Does not capture `auxiliary.db`, `maintenance.json`, application image/configuration or R2 originals. Normal Wiki startup restores latest, not a chosen checkpoint. Use an explicit isolated restore and compare it with the stopped source. |
-| PocketBase v0.40.4 backup | ZIP containing consistent `data.db` and `auxiliary.db` copies plus other included `pb_data` files/local originals | Remote S3 originals are excluded. Not continuous PITR. Backups may live locally or in separately configured backup S3 storage. Useful before freeze or under a separately enforced ingress fence. |
+| PocketBase v0.41.1 backup | ZIP containing consistent `data.db` and `auxiliary.db` copies plus other included `pb_data` files/local originals | Remote S3 originals are excluded. Not continuous PITR. Backups may live locally or in separately configured backup S3 storage. Useful before freeze or under a separately enforced ingress fence. |
 | Basecamp ONCE backup | Gzip tar of persistent application volume plus application/legacy volume settings | External originals and the image itself are excluded. Archive is unencrypted and contains credentials. Useful as a stopped-volume/configuration checkpoint, retained off-host with private access. |
 | PocketDeploy `vault-save` | Controller state, private bindings and SSH authority | Does not back up application databases or originals. Needed separately to recover deployment control. |
 

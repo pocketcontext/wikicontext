@@ -65,3 +65,15 @@ space evidence. Its SQL and search verification now explicitly requests fresh
 copies with a 130-second transport timeout. The deployment regression reproduces
 the original failure and passes with this fix; all 10 deployment-workflow checks
 also pass. Main's native container gates must pass before publication/deployment.
+
+## Server 416841c (v0.9.4, PocketBase v0.41.1) — 30 October 2026
+
+The adopted server is `416841c4d1225ddc464ce0b1e787a797d5b8d7e8`, which changes only
+PocketBase 0.40.4 to 0.41.1 and installer/release tooling. Against a clean build of
+that commit, every README backend/client command, the CI-only candidate, rehearsal,
+file-migration and checkpoint tests, the mocked Gemini handoff with
+`--timing-warnings` (CI-pinned Gemini package), reader typecheck, 147 unit tests,
+production build and all 31 isolated Chromium scenarios passed with synthetic
+isolated data. One Chromium run first failed a scroll-restoration timing assertion
+on this shared 2-CPU host and passed unchanged on rerun. Local runs used Node.js 26
+with pnpm 10.33.2. Container gates were not run locally (no Docker).
