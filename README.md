@@ -4,7 +4,7 @@ Current release controls and platform coverage: [common CI and deployment contra
 
 An agent-maintained knowledge base on PocketContext. Sources, extracted passages, versioned pages, citations, links and publication history live in WikiContext. The browser reader renders published pages and updates when agents publish. Obsidian consumes a reproducible Markdown export. Ingestion and agent questions use the portable skill and authenticated APIs.
 
-Existing knowledge lives in the Company space. Admitted Workspace users receive company editor membership when their account is created; operators manage subsequent membership changes, and login never restores a revoked membership. Personal spaces are optional and created explicitly. SQL snapshots capture active space membership; background copies become visible when complete. REST, realtime and protected files independently enforce current membership. PocketBase's existing default `users` collection supplies identities, with verified Workspace Google JIT and public signup blocked. New accounts never receive account administration. Operators disable accounts to revoke application sessions; Google suspension alone does not revoke an existing session. Re-enabling requires fresh login. Seven-day tokens renew during active Google client use.
+Existing knowledge lives in the Company space. Admitted Workspace users receive company editor membership when their account is created; operators manage subsequent membership changes, and login never restores a revoked membership. Personal spaces are optional and created explicitly. SQL snapshots capture active space membership; background copies become visible when complete. REST, realtime and protected files independently enforce current membership. PocketBase's existing default `users` collection supplies identities, with verified Workspace Google JIT and public signup blocked. New accounts never receive account administration. Operators disable accounts to revoke application sessions; Google suspension alone does not revoke an existing session. Re-enabling requires fresh login. Direct-Google fallback tokens last seven days and renew during active use; hosted-identity tokens have the separate fifteen-minute bound described below.
 
 ## Run locally
 
@@ -125,6 +125,38 @@ The application hooks serve `ui/dist` with a restrictive Content Security Policy
 For frontend development, `pnpm dev` proxies `/api` to `127.0.0.1:8090`.
 The production container builds and serves static assets without a Node runtime.
 Do not commit `ui/dist` or browser test output.
+
+## Hosted identity pilot
+
+Run `wikicontext login --url https://wiki.pocketcontext.com --email you@pocketcontext.com`.
+The shared IdentityContext client opens a hosted sign-in URL, or prints it over SSH.
+Complete Google sign-in in your browser and paste the single-use code into the
+original terminal. The verifier stays in that process; no callback tunnel is needed.
+A valid shared identity session can be reused when signing into the other pilot app.
+
+Shared identity credentials live in `$XDG_STATE_HOME/pocketcontext-id/` (default
+`~/.local/state/pocketcontext-id/`) with private directory/file permissions. They
+expire after seven idle days or thirty days absolute. App URL/email defaults and
+app tokens remain under the existing `wikicontext` state directory. App tokens last
+at most fifteen minutes and cannot be extended by PocketBase auth-refresh; the
+client requests a new signed assertion from IdentityContext instead. Renewal
+never opens a browser during ordinary commands and never falls back automatically.
+Identity assertions are single-use, valid for sixty seconds, and bound to this
+application's exact configured audience. Account disable and existing application
+authorization still apply independently.
+
+Explicit fallback remains `wikicontext login --google --no-browser`; over SSH,
+forward port 8765 from the browser computer to the CLI host before using it.
+`login --password` remains explicit for provisioned password accounts. Direct
+Google/password sessions retain their existing application lifetime. Full
+offboarding therefore requires disabling the identity account **and** the app
+accounts. Central disable immediately blocks new assertions; already issued
+identity app access expires within fifteen minutes.
+
+`wikicontext logout` removes this app's cached token, retaining shared identity
+sign-in. Use `identitycontext logout --email you@pocketcontext.com` to revoke the
+shared identity session; already-issued app tokens retain their bounded lifetime.
+`logout --forget` also removes this app's matching URL/email defaults.
 
 ## Portable skill
 
@@ -353,6 +385,8 @@ python3 tests/deploy.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/maintenance.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/entrypoint.py
 python3 tests/oauth.py
+python3 tests/identity_client.py
+python3 tests/identity_integration.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/client.py
 python3 tests/settings.py
 python3 tests/knowledge.py

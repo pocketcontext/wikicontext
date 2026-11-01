@@ -97,6 +97,8 @@ jobs:
           python3 wikicontext/tests/spaces_migration.py --binary pocketcontext/bin/pocketcontext
       - name: Test isolated frozen clone preparation
         run: python3 wikicontext/tests/clone_preparation.py --binary pocketcontext/bin/pocketcontext
+      - name: Test hosted identity and application authorization
+        run: python3 wikicontext/tests/identity_integration.py --binary pocketcontext/bin/pocketcontext
       - name: Test Google OAuth claims and Workspace signup
         run: python3 wikicontext/tests/oauth_integration.py --binary pocketcontext/bin/pocketcontext
       - name: Test first-start deployment settings
@@ -130,6 +132,7 @@ jobs:
       - name: Test clients, exports and deployment preparation
         run: |
           python3 wikicontext/tests/oauth.py
+          python3 wikicontext/tests/identity_client.py
           python3 wikicontext/tests/client.py
           python3 wikicontext/tests/settings.py
           python3 wikicontext/tests/knowledge.py

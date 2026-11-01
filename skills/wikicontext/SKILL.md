@@ -16,6 +16,38 @@ Resolve `wikicontext` relative to this skill directory. The portable client requ
 
 The executable `wikicontext` beside this file is a standalone uv launcher. Install uv and Python 3.11+, then resolve this launcher to an absolute path or add its directory to PATH. The first invocation downloads the pinned package and dependencies. Use the full command name in all examples.
 
+## Hosted identity pilot
+
+Run `wikicontext login --url https://wiki.pocketcontext.com --email you@pocketcontext.com`.
+The shared IdentityContext client opens a hosted sign-in URL, or prints it over SSH.
+Complete Google sign-in in your browser and paste the single-use code into the
+original terminal. The verifier stays in that process; no callback tunnel is needed.
+A valid shared identity session can be reused when signing into the other pilot app.
+
+Shared identity credentials live in `$XDG_STATE_HOME/pocketcontext-id/` (default
+`~/.local/state/pocketcontext-id/`) with private directory/file permissions. They
+expire after seven idle days or thirty days absolute. App URL/email defaults and
+app tokens remain under the existing `wikicontext` state directory. App tokens last
+at most fifteen minutes and cannot be extended by PocketBase auth-refresh; the
+client requests a new signed assertion from IdentityContext instead. Renewal
+never opens a browser during ordinary commands and never falls back automatically.
+Identity assertions are single-use, valid for sixty seconds, and bound to this
+application's exact configured audience. Account disable and existing application
+authorization still apply independently.
+
+Explicit fallback remains `wikicontext login --google --no-browser`; over SSH,
+forward port 8765 from the browser computer to the CLI host before using it.
+`login --password` remains explicit for provisioned password accounts. Direct
+Google/password sessions retain their existing application lifetime. Full
+offboarding therefore requires disabling the identity account **and** the app
+accounts. Central disable immediately blocks new assertions; already issued
+identity app access expires within fifteen minutes.
+
+`wikicontext logout` removes this app's cached token, retaining shared identity
+sign-in. Use `identitycontext logout --email you@pocketcontext.com` to revoke the
+shared identity session; already-issued app tokens retain their bounded lifetime.
+`logout --forget` also removes this app's matching URL/email defaults.
+
 ## Saved login settings
 
 Login accepts `--url` and `--email` before or after the command. Successful explicit login saves the default URL/email in `$XDG_STATE_HOME/wikicontext/default.json` (default `~/.local/state/wikicontext/default.json`, or `WIKICONTEXT_SESSION_DIR/default.json`). Each server/account token stays in its separate hashed session file. CLI options override environment variables, which override saved defaults. Files use mode 0600 in a mode-0700 directory. Ordinary commands and token refresh do not change the default. `wikicontext logout` removes the selected token but retains settings; `logout --forget` also removes matching defaults. Old cache sessions are not imported; sign in again. Password login uses `login --password` with `WIKICONTEXT_USER_PASSWORD`; passwords are never saved.

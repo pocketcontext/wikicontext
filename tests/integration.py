@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SEARCH = 'search' in json.loads((ROOT / 'pocketcontext.json').read_text())
 
 @contextlib.contextmanager
-def server(binary, fixtures=''):
+def server(binary, fixtures='', context_config=None):
     with tempfile.TemporaryDirectory(prefix='wikicontext-test-') as tmp:
         hooks=Path(tmp)/'pb_hooks'
         shutil.copytree(ROOT/'pb_hooks',hooks)
@@ -32,6 +32,10 @@ onRecordCreateExecute((e) => {
 }, 'user_directory');
 ''' + fixtures)
         common = [str(Path(binary).resolve()), '--dir', str(Path(tmp)/'pb_data'), '--migrationsDir', str(ROOT/'pb_migrations'), '--hooksDir', str(hooks)]
+        if context_config is not None:
+            config_file = Path(tmp) / 'pocketcontext.json'
+            config_file.write_text(json.dumps(context_config))
+            common += ['--contextConfig', str(config_file)]
         result = subprocess.run(common+['superuser','upsert','admin@example.com','SyntheticAdminPassword123!'],cwd=ROOT,capture_output=True,text=True)
         assert result.returncode == 0, result.stdout+result.stderr
         with socket.socket() as sock:

@@ -3,7 +3,7 @@ name = "wikicontext-client"
 version = "0.1.0"
 description = "wikicontext portable client"
 requires-python = ">=3.11"
-dependencies = ["observecontext-client @ git+https://github.com/pocketcontext/observecontext.git@d10e84bb30ce607c03c62c03a4fdfd596d32ab27", "Pillow>=11,<13"]
+dependencies = ["pocketcontext-identity @ git+https://github.com/pocketcontext/identitycontext.git@f6bb3b147e2e4d9a82b447e54811b959c6543a69", "observecontext-client @ git+https://github.com/pocketcontext/observecontext.git@d10e84bb30ce607c03c62c03a4fdfd596d32ab27", "Pillow>=11,<13"]
 
 [project.scripts]
 wikicontext = "wikicontext_client.cli:main"

@@ -241,6 +241,22 @@ def auth_session(cfg, data, method):
     return session
 
 
+def identity_login(cfg, *, interactive=False, no_browser=False, timeout=180):
+    """Exchange a central assertion; never downgrade to direct authentication."""
+    from pocketcontext_identity import IdentityError, assertion, login as central_login
+    try:
+        if interactive:
+            central_login(cfg['email'], no_browser=no_browser, timeout=timeout)
+        signed = assertion(cfg['email'], cfg['url'])
+    except IdentityError:
+        raise Fail(1, 'Identity sign-in or renewal failed; check account access and run wikicontext login. No fallback was attempted.') from None
+    hide(signed)
+    status, data = oauth_send(cfg, 'POST', '/api/context/auth-with-assertion', {'assertion': signed})
+    if status != 200:
+        raise Fail(1, f'Identity assertion exchange failed (HTTP {status}); check application access. No fallback was attempted.')
+    return auth_session(cfg, data, 'identity')
+
+
 def oauth_send(cfg, method, path, body=None, token=None):
     try:
         return send(cfg, method, path, body, token)
@@ -376,7 +392,9 @@ def call(cfg, method, path, body=None, *, timeout=None):
     session = load_session(cfg)
     cached = session is not None
     if not cached:
-        session = login(cfg)
+        session = login(cfg) if cfg.get('password') else identity_login(cfg)
+    if session.get('method') == 'identity' and (oauth_refresh_needed(session) or path == '/api/collections/users/auth-refresh'):
+        session = identity_login(cfg)
     if session.get('method') == 'google' and (oauth_refresh_needed(session) or path == '/api/collections/users/auth-refresh'):
         # Renew at most every five minutes, or near expiry, to respect auth rate limits.
         status, data = oauth_send(cfg, 'POST', '/api/collections/users/auth-refresh', token=session['token'])
@@ -388,6 +406,8 @@ def call(cfg, method, path, body=None, *, timeout=None):
     options = {'timeout': timeout} if timeout is not None else {}
     status, data = send(cfg, method, path, body, session['token'], **options)
     if cached and 400 <= status < 500 and status not in (409, 429) and (status == 401 or token_rejected(cfg, session['token'])):
+        if session.get('method') == 'identity':
+            raise Fail(1, 'Identity session was rejected; check application access and run wikicontext login. No fallback was attempted.')
         if session.get('method') == 'google':
             raise Fail(1, 'Google session was rejected; run wikicontext login --google again.')
         session = login(cfg)
@@ -631,7 +651,9 @@ def run(args):
         say(dump(data, args.pretty), sys.stdout)
         return 0
     if args.command == 'login':
-        saved = google_login(cfg, args.port, args.timeout, not args.no_browser) if args.google else login(cfg)
+        saved = (google_login(cfg, args.port, args.timeout, not args.no_browser) if args.google
+                 else login(cfg) if args.password
+                 else identity_login(cfg, interactive=True, no_browser=args.no_browser, timeout=args.timeout))
         remember_login(cfg, saved)
         say(f'Signed in as {cfg["email"]} at {cfg["url"]}', sys.stdout)
         return 0
@@ -731,8 +753,8 @@ def parse(argv):
         for argument, argument_help in arguments:
             command.add_argument(argument, help=argument_help)
         return command
-    oauth_login = commands.add_parser('login', parents=[pretty], help='sign in with Google using a browser and a loopback callback')
-    modes = oauth_login.add_mutually_exclusive_group(required=True)
+    oauth_login = commands.add_parser('login', parents=[pretty], help='sign in through hosted identity; --google uses the direct loopback fallback')
+    modes = oauth_login.add_mutually_exclusive_group()
     modes.add_argument('--google', action='store_true')
     modes.add_argument('--password', action='store_true', help='use WIKICONTEXT_USER_PASSWORD')
     oauth_login.add_argument('--port', type=int, default=8765, help='loopback callback port; register the matching redirect URI')
