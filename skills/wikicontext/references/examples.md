@@ -1,9 +1,9 @@
 # Portable examples
 
-Run from the installed skill directory, or replace `wikicontext` with its resolved absolute path. Configure URL/email and use Google sign-in, or set the ordinary user's password outside shell history. Never paste tokens into examples.
+Run from the installed skill directory, or replace `wikicontext` with its resolved absolute path. Pass `--url` and `--email` to the initial Google login; later commands reuse saved defaults. For password login, set the ordinary user's password outside shell history and use `login --password`. Never paste tokens into examples.
 
 ```sh
-wikicontext login --google
+wikicontext login --google --url https://wiki.example.com --email you@example.com
 wikicontext check
 wikicontext spaces
 wikicontext ingest /path/to/source.md --title 'Source title'
