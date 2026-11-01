@@ -32,7 +32,7 @@ def main():
         def cli(*argv,expected=0):
             result=subprocess.run(([args.client] if args.client else [sys.executable, str(skill / 'wikicontext')]) + list(argv),env=env,cwd=tmp,capture_output=True,text=True)
             assert 'SyntheticUserPassword123!' not in result.stdout+result.stderr and token not in result.stdout+result.stderr
-            assert result.returncode==expected,(argv,result.stdout,result.stderr)
+            assert result.returncode==expected,(argv,result.returncode,result.stdout,result.stderr)
             return json.loads(result.stdout) if result.stdout.startswith(('{','[')) else result.stdout
         env.pop('WIKICONTEXT_URL')
         env.pop('WIKICONTEXT_USER_EMAIL')

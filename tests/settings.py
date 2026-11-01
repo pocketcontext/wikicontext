@@ -107,6 +107,18 @@ class SavedLogin(unittest.TestCase):
         with self.assertRaises(auth.Fail):
             auth.config()
 
+    def test_symlink_directory_does_not_receive_token(self):
+        target = Path(self.tmp.name) / 'target'
+        target.mkdir(mode=0o700)
+        state = settings.directory('wikicontext')
+        state.symlink_to(target, target_is_directory=True)
+        with patch.object(auth, 'send', return_value=(200, self.response)), patch.object(auth, 'say'):
+            cfg = dict(self.cfg, password='synthetic-password')
+            saved = auth.login(cfg)
+            with self.assertRaises(auth.Fail):
+                auth.remember_login(cfg, saved)
+        self.assertEqual(list(target.iterdir()), [])
+
     def test_remote_http_rejected_before_auth(self):
         with patch.object(auth, 'send') as send:
             with self.assertRaises(auth.Fail):

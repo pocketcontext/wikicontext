@@ -156,18 +156,21 @@ def forget_login(cfg):
 
 def save_session(cfg, session):
     path = session_file(cfg)
+    temporary = None
     try:
-        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        os.chmod(path.parent, 0o700)
+        settings._directory(path.parent, create=True)
         with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, prefix='.session-', delete=False) as handle:
             temporary = Path(handle.name)
             os.fchmod(handle.fileno(), 0o600)
             json.dump(session, handle)
         os.replace(temporary, path)
         return True
-    except OSError as error:
-        say(f'note: session not saved ({error.strerror}); sign-in will be required again')
+    except (OSError, ValueError):
+        say('note: session not saved securely; check the state directory permissions and sign in again')
         return False
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 # HTTP
