@@ -121,22 +121,6 @@ class OAuthTest(unittest.TestCase):
             self.assertEqual(tc.session_file(self.cfg).parent, Path(self.tmp.name) / 'override')
             self.assertIsNone(tc.load_session(self.cfg))
 
-    def test_legacy_cache_session_moved_once(self):
-        legacy = tc.legacy_session_file(self.cfg)
-        legacy.parent.mkdir(parents=True)
-        legacy.write_text(json.dumps({'url': self.cfg['url'], 'email': self.cfg['email'], 'token': 'legacy-secret'}))
-        self.assertEqual(tc.load_session(self.cfg)['token'], 'legacy-secret')
-        self.assertFalse(legacy.exists())
-        self.assertEqual(stat.S_IMODE(tc.session_file(self.cfg).stat().st_mode), 0o600)
-        self.assertEqual(tc.load_session(self.cfg)['token'], 'legacy-secret')
-        # A saved session wins over a stale legacy file, and logout removes both.
-        legacy.write_text(json.dumps({'url': self.cfg['url'], 'email': self.cfg['email'], 'token': 'stale-secret'}))
-        self.assertEqual(tc.load_session(self.cfg)['token'], 'legacy-secret')
-        with patch.dict(os.environ, {'WIKICONTEXT_URL': self.cfg['url'], 'WIKICONTEXT_USER_EMAIL': self.cfg['email']}), \
-                patch.object(tc, 'say'):
-            tc.run(tc.parse(['logout']))
-        self.assertFalse(legacy.exists() or tc.session_file(self.cfg).exists())
-
     def printed_url(self):
         return next(m for m in self.messages if m.startswith('Open this URL')).split('\n')[1]
 

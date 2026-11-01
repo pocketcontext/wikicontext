@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Command-line client for a WikiContext knowledge-base server.
 
-Configuration comes from environment variables:
+Login accepts --url and --email and remembers them. Optional environment overrides:
   WIKICONTEXT_URL             server address, for example https://wiki.example.com
   WIKICONTEXT_USER_EMAIL     email of an account in the `users` collection
   WIKICONTEXT_USER_PASSWORD  password of that account (optional with Google login)
@@ -12,6 +12,7 @@ Exit codes: 0 success; 1 HTTP or transport error; 2 usage or configuration error
 3 `check` found schema differences; 4 HTTP 409 (read the record again, then retry).
 """
 import argparse
+from . import settings
 import base64
 import hashlib
 import http.client
@@ -66,20 +67,16 @@ def dump(data, pretty=False):
     return json.dumps(data, separators=(',', ':'), ensure_ascii=False)
 
 
-def config(names=ENV[:2]):
-    missing = [name for name in names if not os.environ.get(name)]
-    if missing:
-        raise Fail(2, 'missing environment variable: ' + ', '.join(missing) + '. Ask the user to set every missing variable; do not look for credentials elsewhere.')
-    url = os.environ[ENV[0]].rstrip('/')
-    parsed = urllib.parse.urlsplit(url)
-    if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
-        raise Fail(2, 'WIKICONTEXT_URL must be an HTTP(S) URL without credentials, query, or fragment')
-    if parsed.scheme == 'http' and parsed.hostname not in ('localhost', '127.0.0.1', '::1'):
-        raise Fail(2, 'Use HTTPS for a remote WikiContext server')
-    space = os.environ.get(SPACE_ENV) or None
-    if space is not None and not re.fullmatch(r'[a-z0-9]{15}', space):
+def config(args=None):
+    try:
+        result = settings.resolve('wikicontext', ENV[1], args)
+    except (OSError, ValueError) as error:
+        raise Fail(2, str(error)) from None
+    result['password'] = hide(os.environ.get(ENV[2]))
+    result['space'] = os.environ.get(SPACE_ENV) or None
+    if result['space'] is not None and not re.fullmatch(r'[a-z0-9]{15}', result['space']):
         raise Fail(2, f'{SPACE_ENV} must be a 15-character space ID')
-    return {'url': url, 'email': os.environ[ENV[1]], 'password': hide(os.environ.get(ENV[2])), 'space': space}
+    return result
 
 
 def space_id(cfg):
@@ -127,12 +124,6 @@ def session_file(cfg):
     return Path(folder) / session_name(cfg)
 
 
-def legacy_session_file(cfg):
-    """Where clients before ENG-55 kept the session; read once and moved."""
-    base = os.environ.get('XDG_CACHE_HOME') or str(Path.home() / '.cache')
-    return Path(base) / 'wikicontext' / session_name(cfg)
-
-
 def read_session(cfg, path):
     try:
         session = json.loads(path.read_text())
@@ -144,14 +135,23 @@ def read_session(cfg, path):
 
 
 def load_session(cfg):
-    path = session_file(cfg)
-    if path.exists():
-        return read_session(cfg, path)
-    legacy = legacy_session_file(cfg)
-    session = read_session(cfg, legacy)
-    if session is not None and save_session(cfg, session):
-        legacy.unlink(missing_ok=True)
-    return session
+    return read_session(cfg, session_file(cfg))
+
+
+def remember_login(cfg, session):
+    if load_session(cfg) != session:
+        raise Fail(1, 'Login succeeded but its session could not be saved; defaults were not changed.')
+    try:
+        settings.save('wikicontext', cfg)
+    except (OSError, ValueError) as error:
+        raise Fail(1, 'Login session saved but defaults could not be saved: ' + str(error)) from None
+
+
+def forget_login(cfg):
+    try:
+        settings.forget('wikicontext', cfg)
+    except (OSError, ValueError) as error:
+        raise Fail(2, str(error)) from None
 
 
 def save_session(cfg, session):
@@ -220,9 +220,7 @@ def login(cfg):
     status, data = send(cfg, 'POST', '/api/collections/users/auth-with-password', {'identity': cfg['email'], 'password': cfg['password']})
     if status != 200 or not isinstance(data, dict) or 'token' not in data:
         raise Fail(1, f'login as {cfg["email"]} failed: HTTP {status}\n{dump(data)}\nCheck the three WIKICONTEXT_ variables with the user. User credentials only.')
-    session = {'url': cfg['url'], 'email': cfg['email'], 'token': hide(data['token'])}
-    save_session(cfg, session)
-    return session
+    return auth_session(cfg, data, 'password')
 
 
 def auth_session(cfg, data, method):
@@ -567,16 +565,14 @@ def run(args):
     if args.command == 'newid':
         print(''.join(secrets.choice(ID_ALPHABET) for _ in range(15)))
         return 0
+    cfg = config(args)
     if args.command == 'logout':
-        cfg = config(ENV[:2])
-        path, legacy = session_file(cfg), legacy_session_file(cfg)
+        path = session_file(cfg)
         path.unlink(missing_ok=True)
+        if args.forget:
+            forget_login(cfg)
         say(f'removed {path}', sys.stdout)
-        if legacy.exists():
-            legacy.unlink(missing_ok=True)
-            say(f'removed {legacy}', sys.stdout)
         return 0
-    cfg = config()
     if args.space is not None:
         cfg['space'] = args.space
     if args.command == 'ingest':
@@ -632,7 +628,8 @@ def run(args):
         say(dump(data, args.pretty), sys.stdout)
         return 0
     if args.command == 'login':
-        google_login(cfg, args.port, args.timeout, not args.no_browser)
+        saved = google_login(cfg, args.port, args.timeout, not args.no_browser) if args.google else login(cfg)
+        remember_login(cfg, saved)
         say(f'Signed in as {cfg["email"]} at {cfg["url"]}', sys.stdout)
         return 0
     # Reject malformed writes before authentication or any network request.
@@ -719,6 +716,8 @@ def run(args):
 
 def parse(argv):
     pretty = argparse.ArgumentParser(add_help=False)
+    pretty.add_argument('--url', default=argparse.SUPPRESS, help='server URL; overrides environment and saved defaults')
+    pretty.add_argument('--email', default=argparse.SUPPRESS, help='account email; overrides environment and saved defaults')
     pretty.add_argument('--pretty', action='store_true', default=argparse.SUPPRESS, help='indent the JSON output')
     pretty.add_argument('--space', default=argparse.SUPPRESS, help=f'space ID for space-scoped commands (default: {SPACE_ENV}, else the company space)')
     parser = argparse.ArgumentParser(prog='wikicontext', parents=[pretty], description='WikiContext knowledge-base client. Reads with SQL, writes through the records API. There is no delete command: users cannot delete records.',
@@ -728,8 +727,11 @@ def parse(argv):
         command = commands.add_parser(name, parents=[pretty], help=text, description=text)
         for argument, argument_help in arguments:
             command.add_argument(argument, help=argument_help)
-    oauth_login = commands.add_parser('login', help='sign in with Google using a browser and a loopback callback')
-    oauth_login.add_argument('--google', action='store_true', required=True)
+        return command
+    oauth_login = commands.add_parser('login', parents=[pretty], help='sign in with Google using a browser and a loopback callback')
+    modes = oauth_login.add_mutually_exclusive_group(required=True)
+    modes.add_argument('--google', action='store_true')
+    modes.add_argument('--password', action='store_true', help='use WIKICONTEXT_USER_PASSWORD')
     oauth_login.add_argument('--port', type=int, default=8765, help='loopback callback port; register the matching redirect URI')
     oauth_login.add_argument('--timeout', type=int, default=180, help='seconds to wait for the browser (1–600)')
     oauth_login.add_argument('--no-browser', action='store_true', help='print the sign-in URL without opening a browser (use over SSH)')
@@ -745,7 +747,7 @@ def parse(argv):
     add('update', 'change fields of one record', ('collection', 'collection name'), ('id', 'record id'), ('json', 'JSON object with the fields to change, or -'))
     add('batch', 'send up to 20 writes as one transaction', ('json', 'JSON array of {"method","url","body"}, or -'))
     add('newid', 'print a new 15-character record id for use inside a batch')
-    add('logout', 'remove the saved session')
+    add('logout', 'remove the saved session; retain URL and email').add_argument('--forget', action='store_true', help='also forget matching default URL and email')
     source = commands.add_parser('ingest', parents=[pretty], help='store a source (audio normalized by default) and extract evidence passages')
     source.add_argument('path')
     source.add_argument('--title')

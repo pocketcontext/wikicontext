@@ -131,6 +131,7 @@ jobs:
         run: |
           python3 wikicontext/tests/oauth.py
           python3 wikicontext/tests/client.py
+          python3 wikicontext/tests/settings.py
           python3 wikicontext/tests/knowledge.py
           python3 wikicontext/tests/ingest.py
           python3 wikicontext/tests/audio_pipeline.py

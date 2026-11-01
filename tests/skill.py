@@ -31,9 +31,13 @@ def main():
                 spool=None, flush_timeout=10, capture_sql=False, status_file=None))
         def cli(*argv,expected=0):
             result=subprocess.run(([args.client] if args.client else [sys.executable, str(skill / 'wikicontext')]) + list(argv),env=env,cwd=tmp,capture_output=True,text=True)
-            assert env['WIKICONTEXT_USER_PASSWORD'] not in result.stdout+result.stderr and token not in result.stdout+result.stderr
+            assert 'SyntheticUserPassword123!' not in result.stdout+result.stderr and token not in result.stdout+result.stderr
             assert result.returncode==expected,(argv,result.stdout,result.stderr)
             return json.loads(result.stdout) if result.stdout.startswith(('{','[')) else result.stdout
+        env.pop('WIKICONTEXT_URL')
+        env.pop('WIKICONTEXT_USER_EMAIL')
+        cli('login', '--password', '--url', request.base_url, '--email', 'agent@example.com')
+        env.pop('WIKICONTEXT_USER_PASSWORD')
         me=cli('whoami');cli('check')
         assert me['space']=='companyspace001'
         listed=cli('spaces')
@@ -131,6 +135,10 @@ def main():
         assert cli('search','Tuesday','--space',personal)['pages']==[]
         cli('create','pages',json.dumps({'slug':'elsewhere','kind':'concept'}),'--space','missing00000000',expected=2)
         cli('logout')
+        assert (Path(tmp)/'state/wikicontext/default.json').is_file()
+        cli('logout', '--forget')
+        assert not (Path(tmp)/'state/wikicontext/default.json').exists()
+        cli('whoami', expected=2)
         if args.trace:
             events = [json.loads(line) for line in trace_output.read_text().splitlines()]
             assert any(event['method'] == 'POST' and event['route'] == '/api/collections/sources/records' for event in events)

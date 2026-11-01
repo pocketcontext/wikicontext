@@ -2,13 +2,13 @@
 
 Ordinary commands need no ObserveContext installation or login. When the user requests performance tracing, install the separate [ObserveContext skill](https://github.com/pocketcontext/observecontext/tree/main/skills/observecontext). Resolve both installed skill directories to absolute paths. Authenticate independently to WikiContext and ObserveContext using ordinary users; never pass a source application token to ObserveContext.
 
-Set `OBSERVECONTEXT_URL=https://observe.pocketcontext.com` and `OBSERVECONTEXT_USER_EMAIL` to your Workspace email, then run these logins sequentially (each uses loopback port 8765):
+Run these logins sequentially with your server URLs and Workspace email (each uses loopback port 8765):
 
 ```sh
-wikicontext login --google
-observecontext login --google
+wikicontext login --google --url https://wiki.example.com --email you@example.com
+observecontext login --google --url https://observe.example.com --email you@example.com
 observecontext capture \
-  --url "$WIKICONTEXT_URL" --service wikicontext.client --upload \
+  --url https://wiki.example.com --service wikicontext.client --upload \
   -- wikicontext sql 'SELECT id FROM pages LIMIT 5'
 ```
 

@@ -131,10 +131,10 @@ Do not commit `ui/dist` or browser test output.
 The standalone launcher `skills/wikicontext/wikicontext` requires Python 3.11+ and [uv](https://docs.astral.sh/uv/). Add its directory to `PATH` to use the commands below. Its first run installs the client from a pinned Git revision. For development and validation, install the current package in a virtual environment with `python3 -m pip install .`. Release the tested package commit first, then update the launcher to that full commit and verify the copied launcher through uv. The package pins its ObserveContext instrumentation dependency separately.
 
 
-Install with `npx skills add pocketcontext/wikicontext --skill wikicontext`, or copy `skills/wikicontext/` to your agent's skill directory. It works outside this repository. Set `WIKICONTEXT_URL` and `WIKICONTEXT_USER_EMAIL`; use Google login or the optional `WIKICONTEXT_USER_PASSWORD` for an existing account. `login --google` prints the sign-in URL and opens the default browser unless `--no-browser` is given, an SSH session is detected or no browser is available.
+Install with `npx skills add pocketcontext/wikicontext --skill wikicontext`, or copy `skills/wikicontext/` to your agent's skill directory. It works outside this repository. Pass `--url` and `--email` to login; use Google login or `login --password` with `WIKICONTEXT_USER_PASSWORD` for an existing account. `login --google` prints the sign-in URL and opens the default browser unless `--no-browser` is given, an SSH session is detected or no browser is available.
 
 ```sh
-wikicontext login --google
+wikicontext login --google --url https://wiki.example.com --email you@example.com
 wikicontext check
 wikicontext spaces
 wikicontext create-personal-space
@@ -146,7 +146,7 @@ wikicontext lint
 wikicontext export-obsidian /path/to/vault
 ```
 
-Over SSH, forward the CLI loopback port from your browser computer with `ssh -L 8765:127.0.0.1:8765 user@host`. The session file contains only the application token with private permissions. It lives in `$XDG_STATE_HOME/wikicontext/` (default `~/.local/state/wikicontext/`), or in `WIKICONTEXT_SESSION_DIR` when set, so clearing `~/.cache` does not sign you out; a session left in `~/.cache/wikicontext/` by an older client is moved there on first use. `logout` removes both session files; it does not revoke copies elsewhere or remove the separate private audio and extraction caches, which stay under `$XDG_CACHE_HOME/wikicontext/`.
+Over SSH, forward the CLI loopback port from your browser computer with `ssh -L 8765:127.0.0.1:8765 user@host`. The session file contains the server URL, account email and application token with private permissions. It lives in `$XDG_STATE_HOME/wikicontext/` (default `~/.local/state/wikicontext/`), or in `WIKICONTEXT_SESSION_DIR` when set, so clearing `~/.cache` does not sign you out. `logout` removes the selected session file; it does not revoke copies elsewhere or remove the separate private audio and extraction caches, which stay under `$XDG_CACHE_HOME/wikicontext/`.
 
 Commands default to Company unless `--space ID` or `WIKICONTEXT_SPACE` explicitly
 selects another readable space. Creating a personal space does not change that
@@ -320,6 +320,10 @@ archived pages and returns one aggregate row. The statistics describe character
 counts, not query latency or memory use; an empty publication returns NULL sizes.
 `percentile_cont` takes a fraction from 0 to 1; `percentile` takes 0 to 100.
 
+## Saved login settings
+
+Login accepts `--url` and `--email` before or after the command. Successful explicit login saves the default URL/email in `$XDG_STATE_HOME/wikicontext/default.json` (default `~/.local/state/wikicontext/default.json`, or `WIKICONTEXT_SESSION_DIR/default.json`). Each server/account token stays in its separate hashed session file. CLI options override environment variables, which override saved defaults. Files use mode 0600 in a mode-0700 directory. Ordinary commands and token refresh do not change the default. `wikicontext logout` removes the selected token but retains settings; `logout --forget` also removes matching defaults. Old cache sessions are not imported; sign in again. Password login uses `login --password` with `WIKICONTEXT_USER_PASSWORD`; passwords are never saved.
+
 ## Validation
 
 Use synthetic isolated databases only. From this repository, with the pinned server built and `ffmpeg`/`ffprobe` available for audio tests and Pillow installed for image tests:
@@ -350,6 +354,7 @@ python3 tests/maintenance.py --binary /absolute/path/to/pinned/pocketcontext
 python3 tests/entrypoint.py
 python3 tests/oauth.py
 python3 tests/client.py
+python3 tests/settings.py
 python3 tests/knowledge.py
 python3 tests/ingest.py
 python3 tests/audio_pipeline.py

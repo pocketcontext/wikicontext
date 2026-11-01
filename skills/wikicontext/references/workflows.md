@@ -3,6 +3,10 @@
 Follow the [paid API retry policy](retries.md): up to three agent-initiated
 retries per authorized recording workflow require no renewed approval.
 
+## Saved login settings
+
+Login accepts `--url` and `--email` before or after the command. Successful explicit login saves the default URL/email in `$XDG_STATE_HOME/wikicontext/default.json` (default `~/.local/state/wikicontext/default.json`, or `WIKICONTEXT_SESSION_DIR/default.json`). Each server/account token stays in its separate hashed session file. CLI options override environment variables, which override saved defaults. Files use mode 0600 in a mode-0700 directory. Ordinary commands and token refresh do not change the default. `wikicontext logout` removes the selected token but retains settings; `logout --forget` also removes matching defaults. Old cache sessions are not imported; sign in again. Password login uses `login --password` with `WIKICONTEXT_USER_PASSWORD`; passwords are never saved.
+
 ## Sign-in
 
 `login --google` prints a private sign-in URL, opens it in the default browser and waits up to `--timeout` seconds (default 180) for the callback on `127.0.0.1:--port` (default 8765). Start it in the background, or with a tool timeout longer than the CLI timeout. If the output says `Browser not opened`, open the printed URL in the user's default browser with the OS opener (`open` on macOS, `xdg-open` on Linux), passing it as one quoted argument; never drive or automate the browser. The user completes account selection and consent. Wait for the command to finish, then run `whoami`. Over SSH, forward the printed port from the browser computer (`ssh -L 8765:127.0.0.1:8765 user@ssh-host`), run `wikicontext login --google --no-browser` and open the URL on that computer.
