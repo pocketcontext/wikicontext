@@ -48,13 +48,22 @@ sign-in. Use `identitycontext logout --email you@pocketcontext.com` to revoke th
 shared identity session; already-issued app tokens retain their bounded lifetime.
 `logout --forget` also removes this app's matching URL/email defaults.
 
+For shared-session management, install the separate `identitycontext` command once;
+the app launcher does not put it on your normal PATH:
+
+```sh
+uv tool install 'pocketcontext-identity @ git+https://github.com/pocketcontext/identitycontext.git@f6bb3b147e2e4d9a82b447e54811b959c6543a69'
+```
+
+Use `uv tool dir --bin` to find the executable directory and add it to PATH if needed.
+
 ## Saved login settings
 
 Login accepts `--url` and `--email` before or after the command. Successful explicit login saves the default URL/email in `$XDG_STATE_HOME/wikicontext/default.json` (default `~/.local/state/wikicontext/default.json`, or `WIKICONTEXT_SESSION_DIR/default.json`). Each server/account token stays in its separate hashed session file. CLI options override environment variables, which override saved defaults. Files use mode 0600 in a mode-0700 directory. Ordinary commands and token refresh do not change the default. `wikicontext logout` removes the selected token but retains settings; `logout --forget` also removes matching defaults. Old cache sessions are not imported; sign in again. Password login uses `login --password` with `WIKICONTEXT_USER_PASSWORD`; passwords are never saved.
 
 ## Identity and safety
 
-Use the existing default `users` identity. Use `wikicontext login --google --url https://wiki.example.com --email you@example.com` on first use. Later commands reuse the saved settings. `login --google` opens the default browser itself; run it in the background or with a tool timeout longer than its wait (180 seconds by default). If its output says `Browser not opened`, open the printed URL in the user's default browser with the OS opener; never drive or automate the browser. Wait for the command to finish, then run `whoami`. Over SSH, see the sign-in steps in [references/workflows.md](references/workflows.md#sign-in). The session token is saved with mode 0600 in `$XDG_STATE_HOME/wikicontext/` (default `~/.local/state/wikicontext/`), or in `WIKICONTEXT_SESSION_DIR` when set, so clearing `~/.cache` does not sign you out. Ask for missing configuration; never search unrelated files for secrets. Use ordinary user credentials, never superuser credentials for knowledge work. Immutable records are edited by publishing new revisions.
+Use the existing default `users` identity. Use `wikicontext login --url https://wiki.pocketcontext.com --email you@pocketcontext.com` on first use. Later commands reuse the saved settings. The explicit direct-app fallback, `login --google`, opens the default browser itself; run it in the background or with a tool timeout longer than its wait (180 seconds by default). If its output says `Browser not opened`, open the printed URL in the user's default browser with the OS opener; never drive or automate the browser. Wait for the command to finish, then run `whoami`. Over SSH, see the sign-in steps in [references/workflows.md](references/workflows.md#sign-in). The session token is saved with mode 0600 in `$XDG_STATE_HOME/wikicontext/` (default `~/.local/state/wikicontext/`), or in `WIKICONTEXT_SESSION_DIR` when set, so clearing `~/.cache` does not sign you out. Ask for missing configuration; never search unrelated files for secrets. Use ordinary user credentials, never superuser credentials for knowledge work. Immutable records are edited by publishing new revisions.
 
 ## Spaces
 

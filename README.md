@@ -158,15 +158,24 @@ sign-in. Use `identitycontext logout --email you@pocketcontext.com` to revoke th
 shared identity session; already-issued app tokens retain their bounded lifetime.
 `logout --forget` also removes this app's matching URL/email defaults.
 
+For shared-session management, install the separate `identitycontext` command once;
+the app launcher does not put it on your normal PATH:
+
+```sh
+uv tool install 'pocketcontext-identity @ git+https://github.com/pocketcontext/identitycontext.git@f6bb3b147e2e4d9a82b447e54811b959c6543a69'
+```
+
+Use `uv tool dir --bin` to find the executable directory and add it to PATH if needed.
+
 ## Portable skill
 
 The standalone launcher `skills/wikicontext/wikicontext` requires Python 3.11+ and [uv](https://docs.astral.sh/uv/). Add its directory to `PATH` to use the commands below. Its first run installs the client from a pinned Git revision. For development and validation, install the current package in a virtual environment with `python3 -m pip install .`. Release the tested package commit first, then update the launcher to that full commit and verify the copied launcher through uv. The package pins its ObserveContext instrumentation dependency separately.
 
 
-Install with `npx skills add pocketcontext/wikicontext --skill wikicontext`, or copy `skills/wikicontext/` to your agent's skill directory. It works outside this repository. Pass `--url` and `--email` to login; use Google login or `login --password` with `WIKICONTEXT_USER_PASSWORD` for an existing account. `login --google` prints the sign-in URL and opens the default browser unless `--no-browser` is given, an SSH session is detected or no browser is available.
+Install with `npx skills add pocketcontext/wikicontext --skill wikicontext`, or copy `skills/wikicontext/` to your agent's skill directory. It works outside this repository. Pass `--url` and `--email` to hosted `login`; use `login --password` with `WIKICONTEXT_USER_PASSWORD` for a provisioned password account. The explicit direct-app fallback, `login --google`, prints the sign-in URL and opens the default browser unless `--no-browser` is given, an SSH session is detected or no browser is available.
 
 ```sh
-wikicontext login --google --url https://wiki.example.com --email you@example.com
+wikicontext login --url https://wiki.pocketcontext.com --email you@pocketcontext.com
 wikicontext check
 wikicontext spaces
 wikicontext create-personal-space
