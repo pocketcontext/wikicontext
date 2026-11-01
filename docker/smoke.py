@@ -377,6 +377,9 @@ def smoke(image, tmp, run_id):
     initialize(image, volume, env, network)
     run_app(image, name, volume, env, network)
     base = wait_up(name)
+    check(any('starting L0 retention monitor' in line and 'interval=5m0s' in line
+              for line in logs(name).splitlines()),
+          'Litestream runs expired L0 cleanup checks every five minutes')
     step('static reader and bundled assets are available with restrictive browser headers')
     status, headers, html = http('GET', base + '/')
     check(status == 200 and isinstance(html, str) and '<div id="root"' in html, 'reader shell is served')
