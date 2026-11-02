@@ -66,3 +66,17 @@ never executes the prompt.
 Audio recording entities reference an immutable `audio_source_id` and may pin a
 `selected_bundle_rendition_id`. `transcript_pages` and `summary_pages` are typed
 page relationships. See the [audio catalog workflow](workflows.md#audio-recording-catalog).
+
+
+Reader navigation reuses immutable revision properties. `topics` and `catalogs`
+are lists of up to 100 unique lowercase hyphenated keys (maximum 64 characters
+each), not page-ID relationships. Optional definition pages use the matching slug
+and `navigation_kind: topic` or `catalog`; their published title/summary label the
+group. `navigation_order` is a nonnegative safe integer. Catalog definitions may
+set up to twelve `catalog_columns` (safe property keys or `title`, `summary`,
+`slug`, `kind`) and `catalog_sort` (`title` or a listed column, optionally `-`
+prefixed). System IDs and prototype fields are forbidden as columns.
+`onboarding_order` is a positive safe integer selecting Overview guides.
+These fields grant no membership or file access. See
+[reader navigation adoption](workflows.md#reader-navigation-adoption) before
+switching an existing space from inferred topics.

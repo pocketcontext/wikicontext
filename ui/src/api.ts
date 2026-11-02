@@ -331,7 +331,7 @@ export async function listPages(publicationId: string): Promise<PageSummary[]> {
   const expected = await validatePublication(publicationId);
   if (expected === null) return [];
   return pageLists.read(publicationId, async () => {
-    const pages = await allRows<PageSummary>(`SELECT ${summary} ${published(publicationId)} ORDER BY p.slug`, 200);
+    const pages = await allRows<PageSummary>(`SELECT ${summary}, (SELECT origin.created FROM publications origin WHERE origin.run=r.run AND origin.space=pub.space AND origin.sequence<=pub.sequence ORDER BY origin.sequence LIMIT 1) AS publishedAt ${published(publicationId)} ORDER BY p.slug`, 200);
     if (pages.length !== expected) throw new IncompleteReadError();
     return pages;
   }, pages => pages.length > 0);
@@ -489,6 +489,7 @@ interface CitationRow {
   ordinal: number;
   locator: string;
   passage_body: string;
+  rendition_kind?: string;
   source_id: string;
   source_title: string;
   original_name: string;
@@ -523,7 +524,7 @@ async function readPage(publicationId: string, slug: string): Promise<PageDetail
   if (!page) return null;
   const [rows, backlinks, links] = await Promise.all([
     allRows<CitationRow>(
-      `SELECT c.id, c.marker, c.note, t.id AS passage_id, t.ordinal, t.locator, t.body AS passage_body, s.id AS source_id, s.title AS source_title, s.original_name, s.original, s.media_type, s.source_date, s.sha256 FROM citations c JOIN passages t ON t.id=c.passage JOIN renditions e ON e.id=t.rendition JOIN sources s ON s.id=e.source WHERE c.page_revision=${identity(page.id)} ORDER BY c.id`,
+      `SELECT c.id, c.marker, c.note, t.id AS passage_id, t.ordinal, t.locator, t.body AS passage_body, e.kind AS rendition_kind, s.id AS source_id, s.title AS source_title, s.original_name, s.original, s.media_type, s.source_date, s.sha256 FROM citations c JOIN passages t ON t.id=c.passage JOIN renditions e ON e.id=t.rendition JOIN sources s ON s.id=e.source WHERE c.page_revision=${identity(page.id)} ORDER BY c.id`,
       // Transcript pages can cite hundreds of short passages. Use the normal
       // batch size; allRows shrinks it if long passages exceed the byte budget.
       100,
@@ -550,6 +551,7 @@ async function readPage(publicationId: string, slug: string): Promise<PageDetail
         ordinal: row.ordinal,
         locator: row.locator,
         body: row.passage_body,
+        kind: row.rendition_kind,
       },
       source: {
         id: row.source_id,

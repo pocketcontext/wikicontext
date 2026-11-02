@@ -1,7 +1,11 @@
 import { spaceLink } from "./spaceLinks";
 import { memo, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkFrontmatter from "remark-frontmatter";
+import { sourceMetadata } from "./sourceMetadata";
 import remarkGfm from "remark-gfm";
+import { sourceHighlight } from "./sourceHighlight";
+import type { SourceRange } from "./sourceRanges";
 import { visit } from "unist-util-visit";
 
 export function headingId(text: string) {
@@ -15,10 +19,12 @@ export function pageHref(slug: string, publication?: string, anchor?: string) {
   const query = new URLSearchParams();
   if (publication) query.set("publication", publication);
   if (anchor) query.set("heading", anchor);
-  return spaceLink(`${slug ? `#/page/${encodeURIComponent(slug)}` : "#/"}${query.size ? `?${query}` : ""}`);
+  return spaceLink(
+    `${slug ? `#/page/${encodeURIComponent(slug)}` : "#/"}${query.size ? `?${query}` : ""}`,
+  );
 }
 // Operates on Markdown text nodes only: code spans and fenced code remain literal.
-function wikiSyntax() {
+function wikiSyntax({ source = false }: { source?: boolean } = {}) {
   return (tree: any) => {
     const counts = new Map<string, number>();
     const nodeText = (node: any): string =>
@@ -60,6 +66,7 @@ function wikiSyntax() {
       });
     });
 
+    if (source) return;
     visit(tree, "text", (node: any, index: number | undefined, parent: any) => {
       if (index === undefined || !parent || parent.type === "link") return;
       const expression = /\[\[([^\]\n]+)\]\]|\[\^(\d+)\]/g;
@@ -101,10 +108,14 @@ export const Markdown = memo(function Markdown({
   publication,
   onCitation,
   resolveSlug,
+  mode = "page",
+  highlight,
 }: {
   body: string;
   publication?: string;
-  onCitation: (marker: number) => void;
+  onCitation?: (marker: number) => void;
+  mode?: "page" | "source";
+  highlight?: SourceRange;
   resolveSlug?: (target: string) => string;
 }) {
   const heading = (level: number, children: ReactNode, id?: string) => {
@@ -124,10 +135,24 @@ export const Markdown = memo(function Markdown({
   };
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, wikiSyntax]}
+      remarkPlugins={[
+        remarkGfm,
+        ...(mode === "source" ? [remarkFrontmatter] : []),
+        [sourceMetadata, { range: highlight }],
+        [wikiSyntax, { source: mode === "source" }],
+        [
+          sourceHighlight,
+          { text: body, range: mode === "source" ? highlight : undefined },
+        ],
+      ]}
       skipHtml
       urlTransform={(url) =>
-        /^(wiki:|citation:|https?:|mailto:|#)/i.test(url) ? url : ""
+        (mode === "source"
+          ? /^(https?:|mailto:|#)/i
+          : /^(wiki:|citation:|https?:|mailto:|#)/i
+        ).test(url)
+          ? url
+          : ""
       }
       components={{
         h1: ({ children, id }) => heading(1, children, id),
@@ -141,8 +166,9 @@ export const Markdown = memo(function Markdown({
             return (
               <button
                 className="citation"
+                data-citation={href.slice(9)}
                 aria-label={`Citation ${href.slice(9)}`}
-                onClick={() => onCitation(Number(href.slice(9)))}
+                onClick={() => onCitation?.(Number(href.slice(9)))}
               >
                 {children}
               </button>

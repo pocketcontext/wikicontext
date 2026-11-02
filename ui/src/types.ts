@@ -12,6 +12,8 @@ export type PropertyValue = string | number | boolean | null | string[];
 export type Properties = Record<string, PropertyValue>;
 
 export interface PageSummary {
+  /** First publication selecting this immutable revision. */
+  publishedAt?: string;
   /** Immutable revision identity. */
   id: string;
   /** Stable page identity. */
@@ -34,6 +36,8 @@ export interface Source {
 }
 
 export interface Passage {
+  /** Rendition kind; non-text renditions describe derived evidence. */
+  kind?: string;
   id: string;
   ordinal: number;
   locator: string;

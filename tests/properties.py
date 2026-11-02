@@ -50,6 +50,35 @@ def main():
             assert json.loads(fixture.query('SELECT manifest FROM publications ORDER BY sequence DESC LIMIT 1')[0]['manifest'])[page['id']] == updated['id']
             assert fixture.query("SELECT properties FROM page_revisions WHERE id='%s'" % revision['id'])[0]['properties'] is None
 
+    # Existing generic metadata must not become invalid when reader navigation ships.
+    with tempfile.TemporaryDirectory(prefix='wiki-navigation-upgrade-') as tmp:
+        legacy = Path(tmp)/'legacy'
+        legacy.mkdir()
+        for name in ('pb_hooks', 'pb_migrations'):
+            shutil.copytree(ROOT/name, legacy/name)
+        shutil.copy2(ROOT/'pocketcontext.json', legacy/'pocketcontext.json')
+        hook = legacy/'pb_hooks/properties.js'
+        old_hook = hook.read_text()
+        start, end = old_hook.index('function navigation('), old_hook.index('function validate(')
+        hook.write_text(old_hook[:start] + 'function navigation(properties){}\n' + old_hook[end:])
+        work = Path(tmp)/'app'
+        with patch.object(search_integration, 'ROOT', legacy), running(args.binary, work) as request:
+            _, _, token = credentials(request)
+            fixture = Fixture(request, token)
+            page = fixture.page('old-navigation-metadata')
+            staged = fixture.run('old-navigation-metadata')
+            historical_revision = fixture.revision(staged, page, properties={'topics': 'legacy string', 'catalogs': ['Bad key'], 'onboarding_order': -1})
+            fixture.publish(staged)
+            before = fixture.query('SELECT id,manifest FROM publications')
+        with running(args.binary, work) as request:
+            fixture = Fixture(request, token)
+            assert fixture.query('SELECT id,manifest FROM publications') == before
+            unrelated = fixture.page('unrelated-navigation-upgrade')
+            staged = fixture.run('unrelated-navigation-upgrade')
+            fixture.revision(staged, unrelated)
+            fixture.publish(staged)
+            assert json.loads(fixture.query("SELECT properties FROM page_revisions WHERE id='%s'" % historical_revision['id'])[0]['properties']) == {'topics': 'legacy string', 'catalogs': ['Bad key'], 'onboarding_order': -1}
+
     with server(args.binary) as request, tempfile.TemporaryDirectory(prefix='wiki-properties-') as folder:
         _, _, token = credentials(request)
         def create(table, body, expected=200):
@@ -365,6 +394,36 @@ def main():
         resolved_rev = revision(staged, incident_page, incident_rev['id'], incident_props)
         publish(staged)
         assert json.loads(query("SELECT properties FROM page_revisions WHERE id='%s'" % resolved_rev['id'])[0]['properties']) == incident_props
+
+        # Navigation adoption uses new immutable revisions; it never rewrites history.
+        navigation_page = create('pages', {'slug': 'navigation-guide', 'kind': 'concept'})
+        legacy_run = run('navigation-legacy')
+        legacy_revision = revision(legacy_run, navigation_page)
+        publish(legacy_run)
+        historical = query('SELECT id,manifest FROM publications ORDER BY sequence DESC LIMIT 1')[0]
+        invalid_navigation = run('navigation-invalid')
+        for malformed in [
+            {'topics': 'engineering'}, {'topics': ['Bad key']}, {'topics': ['x'*65]},
+            {'catalogs': ['tools', 'tools']}, {'navigation_kind': 'menu'},
+            {'navigation_order': 1}, {'navigation_kind': 'topic', 'navigation_order': -1},
+            {'catalog_columns': ['provider']}, {'navigation_kind': 'catalog', 'catalog_columns': ['id']},
+            {'navigation_kind': 'catalog', 'catalog_columns': ['provider'], 'catalog_sort': 'missing'},
+            {'onboarding_order': 0}, {'onboarding_order': 1.5},
+        ]:
+            revision(invalid_navigation, navigation_page, legacy_revision['id'], malformed, expected=400)
+        adoption = run('navigation-adoption')
+        topic = create('pages', {'slug': 'engineering', 'kind': 'concept'})
+        catalog = create('pages', {'slug': 'developer-tools', 'kind': 'concept'})
+        revision(adoption, topic, properties={'navigation_kind': 'topic', 'navigation_order': 0})
+        revision(adoption, catalog, properties={'navigation_kind': 'catalog', 'catalog_columns': ['title', 'provider'], 'catalog_sort': '-provider'})
+        adopted = revision(adoption, navigation_page, legacy_revision['id'], {'topics': ['engineering'], 'catalogs': ['developer-tools'], 'onboarding_order': 1})
+        publish(adoption)
+        assert query("SELECT manifest FROM publications WHERE id='%s'" % historical['id'])[0]['manifest'] == historical['manifest']
+        assert not query("SELECT properties FROM page_revisions WHERE id='%s'" % legacy_revision['id'])[0]['properties']
+        current = query('SELECT manifest FROM publications ORDER BY sequence DESC LIMIT 1')[0]
+        assert json.loads(current['manifest'])[navigation_page['id']] == adopted['id']
+        too_long = create('pages', {'slug': 'x'*65, 'kind': 'concept'})
+        revision(run('navigation-long-key'), too_long, properties={'navigation_kind': 'topic'}, expected=400)
 
     print('PASS: revisioned properties, immutable history, conflict rollback, bounded metadata, property provenance and relationship graph')
 

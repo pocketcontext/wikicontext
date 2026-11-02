@@ -6,7 +6,7 @@ import Catalog, {
   type CatalogState,
 } from "./Catalog";
 import PropertiesPanel, { propertyText } from "./Properties";
-import { classifyWelcomePage } from "./welcome";
+import { classifyWelcomePage } from "./legacyWelcome";
 import type { PageDetail, PageSummary } from "./types";
 afterEach(cleanup);
 const deployment: PageSummary = {
@@ -54,7 +54,11 @@ const state: CatalogState = {
 };
 describe("published property catalogs", () => {
   it("lists incidents, filters by deployment and sorts durations numerically", () => {
-    const incident = (page: string, title: string, rto?: number): PageSummary => ({
+    const incident = (
+      page: string,
+      title: string,
+      rto?: number,
+    ): PageSummary => ({
       id: `${page}-revision`,
       page,
       title,
@@ -91,9 +95,9 @@ describe("published property catalogs", () => {
         (page) => page.page,
       ),
     ).toEqual(["slow", "fast", "unknown"]);
-    expect(
-      filterCatalog(pages, { ...incidents, deployment: "other" }),
-    ).toEqual([]);
+    expect(filterCatalog(pages, { ...incidents, deployment: "other" })).toEqual(
+      [],
+    );
     render(<Catalog pages={pages} state={incidents} />);
     expect(screen.getByRole("heading", { name: "Incidents" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "Incidents" })).toBeTruthy();

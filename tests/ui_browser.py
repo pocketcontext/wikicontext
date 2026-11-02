@@ -77,6 +77,24 @@ def seed(request):
     publish()
     def control(action):
         nonlocal token
+        if action == '/reader-navigation':
+            text = b'# Reviewed original\n\nThe spectroscopy instrument measures violet light.\n\n**Original formatting** and [[literal-source-link]].\n'
+            payload, media = multipart({'title': 'Reviewed spectroscopy original', 'original_name': 'spectroscopy.md', 'media_type': 'text/markdown'}, 'original', 'spectroscopy.md', text, 'text/markdown')
+            upload = urllib.request.Request(request.base_url + '/api/collections/sources/records', payload, {'Authorization': token, 'Content-Type': media})
+            with urllib.request.urlopen(upload) as response:
+                original_source = json.load(response)
+            rendition = create('renditions', {'source': original_source['id'], 'kind': 'text', 'processor': 'synthetic reader fixture', 'version_label': 'v1'})
+            excerpt = create('passages', {'rendition': rendition['id'], 'ordinal': 1, 'locator': 'document; line 3', 'body': 'The spectroscopy instrument measures violet light.'})
+            run = create('ingestion_runs', {'key': 'reader-navigation-fixture', 'status': 'staging', 'description': 'Synthetic reader navigation', 'sources': [original_source['id']]})
+            topic = create('pages', {'slug': 'observing-science', 'kind': 'concept'})
+            create('page_revisions', {'run': run['id'], 'page': topic['id'], 'title': 'Observing science', 'summary': 'Reviewed reader topic.', 'body': 'Synthetic topic. [needs verification]', 'properties': {'navigation_kind': 'topic', 'navigation_order': 1}})
+            catalog = create('pages', {'slug': 'instruments', 'kind': 'concept'})
+            create('page_revisions', {'run': run['id'], 'page': catalog['id'], 'title': 'Instruments', 'summary': 'Reviewed instrument catalog.', 'body': 'Synthetic catalog. [needs verification]', 'properties': {'navigation_kind': 'catalog', 'catalog_columns': ['title', 'provider'], 'catalog_sort': 'title'}})
+            knowledge = create('pages', {'slug': 'spectroscopy', 'kind': 'concept'})
+            revision = create('page_revisions', {'run': run['id'], 'page': knowledge['id'], 'title': 'Spectroscopy guide', 'summary': 'A reviewed instrument guide.', 'body': '## Measurement\n\nThe spectroscopy instrument measures violet light.[^1]', 'properties': {'topics': ['observing-science'], 'catalogs': ['instruments'], 'provider': 'Synthetic laboratory'}})
+            create('citations', {'page_revision': revision['id'], 'passage': excerpt['id'], 'marker': '1', 'note': 'Exact original text.'})
+            request('PATCH', '/api/collections/ingestion_runs/records/' + run['id'], {'expected_revision': run['revision'], 'status': 'published'}, token)
+            return {'source': original_source['id'], 'passage': excerpt['id']}
         if action == '/audio':
             from transcript_bundle import fixture, generation_fixture
             from wikicontext_client import ingest

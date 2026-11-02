@@ -60,7 +60,30 @@ clears affected views and rejects pending responses. Logout or an identity chang
 also discards all reader caches. Unchanged publications reuse cached content.
 See [performance behavior and server adoption](docs/reader-performance.md)
 for cache bounds, isolated measurements and release prerequisites.
-Each publication can select a home page. `/#/` opens that page and the sidebar marks it Home; unset or cleared choices open the built-in welcome index. Historical views retain their home choice, and explicit page links stay stable. The Welcome link (`/#/welcome`) always opens a searchable, topic-grouped index of every unarchived page in the selected publication, with an A–Z view and onboarding links drawn only from available pages. New or uncategorized pages remain visible under Other knowledge. Welcome and sidebar search use the same full-text search across published titles, summaries and contents. The sidebar starts with topic navigation; expand All pages for the complete catalog. The welcome directory supports topic browsing and an A–Z view, while additional onboarding guides remain under All onboarding guides. No company page catalog is bundled into the reader.
+Each publication can select a home page. `/#/` opens that page; unset or cleared
+choices open Overview. `/#/welcome` always opens Overview with recent pages,
+collapsible onboarding guides and topic shortcuts. `/#/pages` opens the complete
+filterable directory with topic, type and alphabetical views. Topic membership and
+custom catalogs come from published revision properties, with optional definition
+pages supplying labels, order and catalog columns. Existing publications without
+explicit topic metadata retain the earlier inferred grouping, labelled as such.
+Adoption uses ordinary staging revisions and atomic publication; historical revisions
+are never rewritten. See [topic and catalog navigation](docs/data-model.md#topic-and-catalog-navigation)
+for the contract and migration procedure. Empty built-in catalogs are hidden.
+
+Search results highlight matches and open the matching paragraph in the selected
+publication. Dated version controls distinguish Current version from pinned history;
+Copy link offers Current page (follows updates) and This version (fixed publication).
+The navigation drawer supports Escape, focus trapping and focus restoration at mobile
+and split-window widths. Both light and dark themes remain available.
+
+Citations open beside the claim on wide screens and in a modal on narrower screens.
+Evidence excerpts render safe Markdown. View in source preserves the passage ID and
+opens a protected UTF-8 original preview up to 2 MiB only after checking its SHA-256.
+Verified exact text ranges are highlighted, with reading and exact-source views for
+Markdown. Unsupported, oversized or non-text originals remain downloadable; extracted
+or derived evidence is labelled and is never presented as an exact original range.
+Original previews remain in memory and are cleared with the view or access loss.
 Unpublished revisions are never selected. Markdown supports tables, code, wiki
 links with aliases/heading anchors, citation markers and callouts. Raw HTML and
 embedded images are disabled. Obsidian plugins, block embeds, editing and two-way

@@ -1,3 +1,5 @@
+import CustomCatalog from "./CustomCatalog";
+import { availableCatalogTypes } from "./catalogNavigation";
 import { spaceLink } from "./spaceLinks";
 import Prompts from "./Prompts";
 import { AudioCatalog } from "./Audio";
@@ -36,6 +38,7 @@ export const catalogLabels = {
 };
 export type CatalogType = (typeof catalogTypes)[number];
 export interface CatalogState {
+  custom?: string;
   type: CatalogType;
   query: string;
   language?: string;
@@ -61,10 +64,17 @@ export function catalogHref(
   const params = new URLSearchParams();
   if (publication) params.set("publication", publication);
   for (const [key, value] of Object.entries(state)) {
-    if (key !== "type" && value && !(key === "sort" && value === "title"))
+    if (
+      key !== "type" &&
+      key !== "custom" &&
+      value &&
+      !(key === "sort" && value === "title" && state.custom === undefined)
+    )
       params.set(key === "query" ? "q" : key, String(value));
   }
-  return spaceLink(`#/catalog/${state.type || "resource"}${params.size ? `?${params}` : ""}`);
+  return spaceLink(
+    `#/catalog/${state.custom !== undefined ? `custom/${encodeURIComponent(state.custom)}` : state.type || "resource"}${params.size ? `?${params}` : ""}`,
+  );
 }
 const columns: Record<CatalogType, string[]> = {
   prompt: [],
@@ -193,9 +203,51 @@ export default function Catalog({
   publication?: string;
   onNavigate?: (href: string) => void;
 }) {
-  if (state.type === "audio_recording") return <AudioCatalog pages={pages} state={state} publication={publication} onNavigate={onNavigate} />;
-  if (state.type === "prompt") return <Prompts pages={pages} state={state} publication={publication} snapshotId={snapshotId} space={space} onNavigate={onNavigate} />;
-  if (state.type === "repository_document") return <RepositoryFiles pages={pages} state={state} publication={publication} onNavigate={onNavigate} />;
+  if (state.custom !== undefined)
+    return (
+      <CustomCatalog
+        pages={pages}
+        state={state}
+        publication={publication}
+        onNavigate={onNavigate}
+      />
+    );
+  if (!catalogTypes.includes(state.type))
+    return (
+      <section className="catalog-page">
+        <h1>Catalog unavailable</h1>
+        <p>This catalog is not available in this publication.</p>
+      </section>
+    );
+  if (state.type === "audio_recording")
+    return (
+      <AudioCatalog
+        pages={pages}
+        state={state}
+        publication={publication}
+        onNavigate={onNavigate}
+      />
+    );
+  if (state.type === "prompt")
+    return (
+      <Prompts
+        pages={pages}
+        state={state}
+        publication={publication}
+        snapshotId={snapshotId}
+        space={space}
+        onNavigate={onNavigate}
+      />
+    );
+  if (state.type === "repository_document")
+    return (
+      <RepositoryFiles
+        pages={pages}
+        state={state}
+        publication={publication}
+        onNavigate={onNavigate}
+      />
+    );
   const update = (patch: Partial<CatalogState>) => {
     const href = catalogHref({ ...state, offset: 0, ...patch }, publication);
     if (onNavigate) onNavigate(href);
@@ -242,7 +294,7 @@ export default function Catalog({
         describe observations and reviews, not publication time.
       </p>
       <nav className="catalog-tabs" aria-label="Catalogs">
-        {catalogTypes.map((type) => (
+        {availableCatalogTypes(pages).map((type) => (
           <a
             key={type}
             href={catalogHref({ type }, publication)}

@@ -34,7 +34,8 @@ test("company remains default, personal space is explicit and its links survive 
   await page.goto(`/#/page/observatory?space=${personal}`);
   await expect(page.getByRole("heading", { name: "Personal notes", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Observatory", exact: true })).toHaveCount(0);
-  await page.getByRole("button", { name: "Copy live link", exact: true }).click();
+  await page.locator(".copy-links summary").click();
+  await page.getByRole("button", { name: /Current page/ }).click();
   await page.reload();
   await expect(page.getByRole("heading", { name: "Personal notes", exact: true })).toBeVisible();
   await page.getByLabel("Search pages", { exact: true }).fill("private");
@@ -96,7 +97,7 @@ test("space switch fences delayed content and company membership revocation clea
   await page.getByLabel("Space", { exact: true }).selectOption("companyspace001");
   release();
   await expect.poll(() => fulfilled).toBe(true);
-  await expect(page.getByRole("heading", { name: "Welcome to our shared context.", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Personal notes", exact: true })).toHaveCount(0);
   await page.goto("/#/page/observatory");
   await expect(page.getByRole("heading", { name: "Observatory", exact: true })).toBeVisible();

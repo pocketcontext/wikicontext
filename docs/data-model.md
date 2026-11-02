@@ -277,3 +277,68 @@ against source hashes and manifest declarations. Source metadata and generated
 speaker names are extraction claims, not account identities or factual verification.
 The Audio view keeps generated analysis separate from reviewed summaries, marks
 timestamps approximate, and does not execute content or publish anything.
+
+
+### Topic and catalog navigation
+
+The reader's Overview and All pages directory use the selected immutable
+publication. Page revisions may declare `topics` and `catalogs`: lists of up to
+100 unique lowercase hyphenated keys, each at most 64 characters. A page can
+belong to multiple groups. These strings organize reading and grant no access.
+They are not page relationships and do not require `page_links` records.
+
+Optional definition pages use their stable slug as the key and set
+`navigation_kind` to `topic` or `catalog`. Their published title and summary supply
+the group's label and description. `navigation_order` is a nonnegative safe
+integer; unspecified groups sort after ordered groups. Definition pages remain
+readable in All pages but do not become members of their own groups.
+
+Catalog definitions may declare up to twelve unique `catalog_columns`, using
+safe property keys or the display fields `title`, `summary`, `slug` and `kind`.
+System identifiers and prototype keys are rejected. `catalog_sort` is `title`
+or a listed column, optionally prefixed with `-` for descending order. Columns
+render values as text or existing authorized publication relationships. They
+never evaluate expressions, HTML, SQL or scripts. Custom catalogs offer search,
+sorting and fifty-row pagination over the complete selected publication.
+Built-in catalogs, including Audio and Incidents, retain their existing behavior;
+only populated built-ins appear in navigation.
+
+`onboarding_order` is an optional positive safe integer selecting a guide for
+Overview's collapsed Getting started list. Overview also offers topic shortcuts
+and up to six recently published pages when publication timestamps are available.
+All pages supports topic/type grouping, title/summary/type filtering and A–Z
+ordering. Search continues to use publication-scoped full-text results.
+
+#### Adoption without rewriting history
+
+This release performs no knowledge-data migration and modifies no existing page,
+revision or publication. A selected publication with no valid `topics` list or valid topic
+definition retains the prior title-based topic grouping, labelled as inferred in
+the reader. Its onboarding suggestions also remain compatible until explicit
+onboarding or topic metadata is adopted. Once the selected publication contains a
+valid `topics` list (including an empty list) or a valid topic definition, topic membership
+comes exclusively from published metadata; pages without membership appear in
+Other knowledge. Switching to older history restores that publication's behavior.
+Custom catalog adoption alone does not switch topic classification.
+
+To adopt explicit navigation for a space:
+
+1. Read its latest complete publication and review the inferred groups. Decide
+   the topic keys and guide order before writing.
+2. Create one staging run using the ordinary authenticated API/client. Stage new
+   revisions of the selected pages with reviewed `topics` lists, optional
+   `catalogs` and `onboarding_order`. Preserve prose, properties, citations,
+   property evidence and page links; set each expected `base_revision` to the
+   selected revision. Include `topics: []` for deliberately unassigned pages.
+3. Optionally create topic/catalog definition pages and revisions in the same run,
+   retaining the normal citation or `[needs verification]` rules for their prose.
+4. Review and publish the run atomically. A concurrent revision conflict requires
+   rereading and a new staging run, never replacing expected bases automatically.
+5. Verify Overview, All pages and custom catalogs against the new publication,
+   then verify an earlier pinned publication still shows its original grouping.
+
+New revisions validate these navigation fields when created. Historical generic
+metadata is not retroactively rejected or rewritten. The frontend ignores
+malformed navigation values. Adoption is an editorial publication, not a schema
+migration, and does not create membership, change protected-file authorization,
+or alter the publication's home-page choice.

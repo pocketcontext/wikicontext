@@ -180,6 +180,11 @@ function validate(app,r){
  if(t==='pages'&&['index','log'].includes(r.getString('slug')))invalid('Reserved page slug');
  if(t==='page_revisions'){
   const metadata=require(`${__hooks}/properties.js`).validate(r).properties;
+  // New navigation fields are validated on new revisions, never retroactively
+  // reinterpreted as a migration of immutable historical metadata.
+  require(`${__hooks}/properties.js`).navigation(metadata);
+  const navigationPage=local(app,'pages',r.getString('page'),space);
+  if(metadata.navigation_kind&&(navigationPage.getString('slug').length>64||! /^[a-z0-9]+(-[a-z0-9]+)*$/.test(navigationPage.getString('slug'))))invalid('Navigation definition slug must be a lowercase hyphenated key of at most 64 characters');
   audioCatalog(app,r,metadata,space);
   if(metadata.catalog_type==='repository_document'&&metadata.output_mode==='exact_copy')local(app,'sources',metadata.source_id,space);
   draft(app,r.getString('run'));

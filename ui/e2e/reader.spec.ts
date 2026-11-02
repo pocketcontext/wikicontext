@@ -57,7 +57,7 @@ test("published reader: navigation, evidence, safe Markdown, live updates, histo
     ),
   ).toBeVisible();
   const passageURL = await page.getByRole("link", { name: "Open passage", exact: true }).getAttribute("href");
-  const sourceURL = await page.getByRole("link", { name: "Open source", exact: true }).getAttribute("href");
+  const sourceURL = await page.getByRole("link", { name: "View in source", exact: true }).getAttribute("href");
   const originalLink = page.getByRole("link", { name: /Open original/ });
   await expect(originalLink).toBeVisible();
   const originalResponse = await request.get(
@@ -107,9 +107,9 @@ test("published reader: navigation, evidence, safe Markdown, live updates, histo
   ).toBeFocused();
   await page.goto("/" + passageURL);
   await expect(page.getByRole("heading", { name: "Passages", exact: true })).toBeVisible();
-  await expect(page.locator("blockquote.passage")).toContainText("observatory opened in 2026");
+  await expect(page.locator(".evidence-excerpt")).toContainText("observatory opened in 2026");
   await page.reload();
-  await expect(page.locator("blockquote.passage")).toContainText("observatory opened in 2026");
+  await expect(page.locator(".evidence-excerpt")).toContainText("observatory opened in 2026");
   await page.goto("/" + sourceURL);
   await expect(page.getByRole("button", { name: "Download original", exact: true })).toBeVisible();
   let releaseFileToken!: () => void;
@@ -135,14 +135,14 @@ test("published reader: navigation, evidence, safe Markdown, live updates, histo
   await page.getByLabel("Search passages", { exact: true }).fill("does-not-exist");
   await expect(page.getByText("No matches.", { exact: true })).toBeVisible();
   await page.goto("/#/page/observatory");
-  await expect(page.getByRole("button", { name: "Copy historical link", exact: true })).toBeVisible();
+  await expect(page.locator(".copy-links summary")).toBeVisible();
   await page.getByRole("link", { name: "the telescope", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Telescope", exact: true }),
   ).toBeVisible();
   await expect(page.getByText(/^BACKLINKS/)).toBeVisible();
   await page
-    .getByRole("link", { name: "Observatory", exact: true })
+    .getByRole("link", { name: /Observatory$/ })
     .last()
     .click();
   await expect(
@@ -157,10 +157,10 @@ test("published reader: navigation, evidence, safe Markdown, live updates, histo
   ).toBeVisible();
   await expect(searchResults.locator("li")).toHaveCount(20);
   await search.fill("");
-  await page.locator("details.all-pages-navigation summary").click();
+  await page.goto("/#/pages");
   await page
-    .locator(".page-list")
-    .getByRole("link", { name: "Observatory", exact: true })
+    .locator(".directory-entries")
+    .getByRole("link", { name: /^Observatory/ })
     .click();
   // Wait for hash navigation to finish before asserting keyboard focus.
   await expect(page.getByRole("heading", { name: "Observatory", exact: true })).toBeVisible();
@@ -190,7 +190,7 @@ test("published reader: navigation, evidence, safe Markdown, live updates, histo
   ).toBeVisible();
 
   const history = page.getByLabel("Publication", { exact: true });
-  await history.selectOption({ label: "Publication 1" });
+  await history.selectOption((await history.locator("option").filter({ hasText: /Publication 1$/ }).getAttribute("value"))!);
   await expect(
     page.getByText("Published edition 1.", { exact: false }),
   ).toBeVisible();
@@ -291,7 +291,7 @@ test("ranked search: scoped pagination, safe excerpts, back navigation, conflict
   const results = page.getByRole("region", { name: "Search results" });
   await expect(results.locator("li")).toHaveCount(20);
   await expect(results.locator("img,script")).toHaveCount(0);
-  await expect(page.getByRole("navigation", { name: "Pages" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Reader sections" })).toBeVisible();
   await page.getByRole("button", { name: "Load more results" }).click();
   await expect(results.locator("li")).toHaveCount(25);
   await page
@@ -312,9 +312,7 @@ test("ranked search: scoped pagination, safe excerpts, back navigation, conflict
     .locator("#reader")
     .evaluate((node) => node.scrollTop);
   await last.click();
-  await expect(
-    page.getByRole("heading", { name: selectedTitle!, exact: true }),
-  ).toBeVisible();
+  await expect(page.locator("article .page-title")).toHaveText(selectedTitle!);
   await page.goBack();
   await expect(results.locator("li")).toHaveCount(25);
   await expect(
@@ -325,6 +323,47 @@ test("ranked search: scoped pagination, safe excerpts, back navigation, conflict
       page.locator("#reader").evaluate((node) => node.scrollTop),
     )
     .toBeCloseTo(scroll, -1);
+
+  // A different, uncached page remains pending while the complete search view
+  // stays readable. Back must preserve its scroll even without a hide/show cycle.
+  const pendingLink = results.locator("h2 a").nth(23);
+  const pendingHref = await pendingLink.getAttribute("href");
+  const pendingSlug = decodeURIComponent(pendingHref!.split("/page/")[1].split("?")[0]);
+  let releasePending!: () => void;
+  const pendingGate = new Promise<void>(resolve => { releasePending = resolve; });
+  let held = false, delivered = false;
+  await page.route("**/api/context/query", async route => {
+    const sql = route.request().postDataJSON().sql as string;
+    if (!held && sql.includes("r.body") && sql.includes(`p.slug='${pendingSlug}'`)) {
+      const response = await route.fetch();
+      held = true;
+      await pendingGate;
+      await route.fulfill({ response });
+      delivered = true;
+    } else await route.continue();
+  });
+  try {
+    await pendingLink.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(400);
+    const pendingScroll = await page.locator("#reader").evaluate(node => node.scrollTop);
+    await pendingLink.click();
+    await expect.poll(() => held).toBe(true);
+    await expect(page.locator("#reader")).toHaveAttribute("aria-busy", "true");
+    await expect(results).toBeVisible();
+    await expect.poll(() => page.locator("#reader").evaluate(node => node.scrollTop)).toBeCloseTo(pendingScroll, -1);
+    await page.goBack();
+    await expect(page.locator("#reader")).toHaveAttribute("aria-busy", "false");
+    await expect(results.locator("li")).toHaveCount(25);
+    await expect.poll(() => page.locator("#reader").evaluate(node => node.scrollTop)).toBeCloseTo(pendingScroll, -1);
+    releasePending();
+    await expect.poll(() => delivered).toBe(true);
+    await expect(results).toBeVisible();
+    await expect(page.locator("article .page-title")).toHaveCount(0);
+  } finally {
+    releasePending();
+    await page.unroute("**/api/context/query");
+  }
+
   const published = await request.post(
     process.env.WIKICONTEXT_TEST_CONTROL + "/publish",
   );
@@ -366,7 +405,7 @@ test("ranked search: scoped pagination, safe excerpts, back navigation, conflict
   await expect(results).toContainText("No published pages match");
   await page
     .getByLabel("Publication", { exact: true })
-    .selectOption({ label: "Publication 1" });
+    .selectOption((await page.getByLabel("Publication", { exact: true }).locator("option").filter({ hasText: /Publication 1$/ }).getAttribute("value"))!);
   await expect(results.locator("li")).toHaveCount(1);
   await expect(results).toContainText("Published edition 1");
   await page.setViewportSize({ width: 390, height: 844 });
@@ -432,7 +471,7 @@ test("an idle reader clears cached content when its token expires", async ({ pag
 test("home-only publications update live root while history and explicit links remain stable", async ({ page, context, request }) => {
   await login(page);
   await page.goto("/#/");
-  await expect(page.getByRole("heading", { name: "Welcome to our shared context.", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
   const explicit = await context.newPage();
   await explicit.goto("/#/page/observatory");
   await expect(explicit.getByRole("heading", { name: "Observatory", exact: true })).toBeVisible();
@@ -449,11 +488,11 @@ test("home-only publications update live root while history and explicit links r
   await expect(explicit.getByRole("heading", { name: "Observatory", exact: true })).toBeVisible();
   const directory = await context.newPage();
   await directory.goto(`/#/welcome?publication=${selected.id}`);
-  await expect(directory.getByRole("heading", { name: "Welcome to our shared context.", exact: true })).toBeVisible();
+  await expect(directory.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
   await expect(directory.getByLabel("Publication", { exact: true })).toHaveValue(selected.id);
   await directory.getByLabel("Publication", { exact: true }).selectOption("live");
   await expect(directory).toHaveURL(/#\/welcome$/);
-  await expect(directory.getByRole("heading", { name: "Welcome to our shared context.", exact: true })).toBeVisible();
+  await expect(directory.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
   await directory.close();
   const history = page.getByLabel("Publication", { exact: true });
   await history.selectOption(selected.id);
@@ -465,118 +504,78 @@ test("home-only publications update live root while history and explicit links r
   await expect(page.getByRole("heading", { name: "Telescope", exact: true })).toBeVisible();
   await page.reload();
   await expect(page.getByRole("heading", { name: "Telescope", exact: true })).toBeVisible();
-  await history.selectOption({ label: "Publication 1" });
-  await expect(page.getByRole("heading", { name: "Welcome to our shared context.", exact: true })).toBeVisible();
+  await history.selectOption((await history.locator("option").filter({ hasText: /Publication 1$/ }).getAttribute("value"))!);
+  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
   await history.selectOption("live");
   await expect(page).toHaveURL(/#\/$/);
-  await expect(page.getByRole("heading", { name: "Welcome to our shared context.", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
   await expect(page.locator(".home-badge")).toHaveCount(0);
 });
 
 
-test("welcome directory includes published pages, onboarding, filters, history and live additions", async ({ page, context, request }) => {
+test("overview and complete directory preserve search, topics, history and live additions", async ({ page, context, request }) => {
   await login(page);
   await page.goto("/#/welcome");
-  await expect(page.getByRole("heading", { name: "Welcome to our shared context.", exact: true })).toBeVisible();
-  const screenshots = process.env.WIKICONTEXT_TEST_SCREENSHOTS || "/tmp";
-  await page.screenshot({ path: `${screenshots}/welcome-desktop-dark.png`, fullPage: true });
-  await page.getByRole("button", { name: "Switch to light theme", exact: true }).click();
-  await page.screenshot({ path: `${screenshots}/welcome-desktop-light.png`, fullPage: true });
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.screenshot({ path: `${screenshots}/welcome-mobile-light.png`, fullPage: true });
-  await page.getByRole("button", { name: "Switch to dark theme", exact: true }).click();
-  await page.screenshot({ path: `${screenshots}/welcome-mobile-dark.png`, fullPage: true });
-  await page.setViewportSize({ width: 1280, height: 900 });
-  const onboarding = page.getByRole("region", { name: "New to the workspace?", exact: true });
-  await expect(onboarding.getByRole("link", { name: /Open onboarding/ })).toBeVisible();
-  await expect(onboarding.locator("a")).toHaveCount(1);
-  const index = page.getByRole("region", { name: "The complete page index", exact: true });
-  const entries = index.locator('a[href*="/page/"]');
-  await expect(entries).toHaveCount(28);
-  const slugs = await entries.evaluateAll(nodes => nodes.map(node => (node as HTMLAnchorElement).hash.split("?")[0]));
-  expect(new Set(slugs).size).toBe(28);
-  const filter = page.getByRole("searchbox", { name: "Search published pages", exact: true });
+  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
   await expect(page.getByRole("searchbox")).toHaveCount(1);
-  await expect(page.getByRole("navigation", { name: "Topics", exact: true })).toBeVisible();
-  const allPages = page.locator("details.all-pages-navigation");
-  await expect(allPages).not.toHaveAttribute("open", "");
-  await allPages.locator("summary").click();
-  await expect(allPages.getByRole("navigation", { name: "Pages", exact: true }).getByRole("link")).toHaveCount(28);
-  await allPages.locator("summary").click();
-  await expect(page.getByRole("button", { name: "Search", exact: true })).toBeDisabled();
-  // A body-only term proves Welcome uses the same full-text search as the sidebar.
+  await expect(page.locator(".welcome-onboarding")).not.toHaveAttribute("open", "");
+  await page.locator(".welcome-onboarding summary").click();
+  await expect(page.locator(".welcome-guide-links a")).toHaveCount(1);
+  await expect(page.locator(".welcome-recent-list li")).toHaveCount(6);
+  const filter = page.getByRole("searchbox", { name: "Search published pages", exact: true });
   await filter.fill("research");
   await filter.press("Enter");
   const searchResults = page.getByRole("region", { name: "Search results" });
   await expect(searchResults.locator("li")).toHaveCount(20);
-  await expect(page.getByLabel("Search pages", { exact: true })).toHaveValue("research");
   await page.getByRole("button", { name: "Load more results" }).click();
   await expect(searchResults.locator("li")).toHaveCount(25);
   await page.goto("/#/welcome");
   await filter.fill("no-such-page");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await expect(searchResults).toContainText("No published pages match");
-  await page.goto("/#/page/observatory");
-  await page.getByRole("navigation", { name: "Topics", exact: true }).getByRole("link", { name: /Getting started/ }).click();
-  await expect(page).toHaveURL(/#\/welcome\?topic=/);
+  await page.goto("/#/pages?topic=getting-started");
+  const entries = page.locator(".directory-entries > li");
+  await expect(page.getByRole("heading", { name: "All pages", exact: true })).toBeVisible();
   await expect(entries).toHaveCount(1);
-  await expect(page.getByRole("heading", { name: "The complete page index", exact: true })).toBeInViewport();
   await expect(entries).toContainText("Colleague onboarding");
   await page.getByRole("button", { name: "Clear filters", exact: true }).click();
-  await expect(page).toHaveURL(/#\/welcome\?topic=all$/);
-  await expect(page.getByRole("navigation", { name: "Topics", exact: true }).locator('[aria-current="page"]')).toHaveCount(0);
-  await page.getByRole("button", { name: "A–Z", exact: true }).click();
   await expect(entries).toHaveCount(28);
-  const titles = await entries.allTextContents();
-  expect(titles[0]).toContain("Colleague onboarding");
-  expect(titles.at(-1)).toContain("Telescope");
-  await filter.focus();
-  await page.keyboard.press("Tab");
-  expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
+  const slugs = await entries.locator("a").evaluateAll(nodes => nodes.map(node => (node as HTMLAnchorElement).hash.split("?")[0]));
+  expect(new Set(slugs).size).toBe(28);
+  const localFilter = page.getByLabel("Filter pages", { exact: true });
+  await localFilter.fill("starlight");
+  await expect(entries).toHaveCount(25);
+  await page.reload();
+  await expect(localFilter).toHaveValue("starlight");
+  await expect(entries).toHaveCount(25);
+  await localFilter.fill("");
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
-  await filter.press("Escape");
-  await filter.blur();
-  await page.keyboard.press("/");
-  await expect(filter).toBeFocused();
   await page.setViewportSize({ width: 1280, height: 900 });
   const history = page.getByLabel("Publication", { exact: true });
-  await history.selectOption({ label: "Publication 1" });
-  await expect(page).toHaveURL(/#\/welcome\?publication=/);
+  await history.selectOption((await history.locator("option").filter({ hasText: /Publication 1$/ }).getAttribute("value"))!);
   const historicURL = page.url();
+  await expect(entries).toHaveCount(28);
   const live = await context.newPage();
-  await live.goto("/#/welcome");
-  const liveEntries = live.getByRole("region", { name: "The complete page index", exact: true }).locator('a[href*="/page/"]');
-  await expect(liveEntries).toHaveCount(28);
-  const liveFilter = live.getByRole("searchbox", { name: "Search published pages", exact: true });
-  await liveFilter.fill("starlight");
-  await live.getByRole("button", { name: "A–Z", exact: true }).click();
+  await live.goto("/#/pages");
+  const liveEntries = live.locator(".directory-entries > li");
   await expect(liveEntries).toHaveCount(28);
   const published = await request.post(process.env.WIKICONTEXT_TEST_CONTROL + "/publish-new-page");
   expect(published.ok(), await published.text()).toBeTruthy();
   const added = await published.json();
   await expect(live.getByLabel("Publication", { exact: true }).locator(`option[value="${added.id}"]`)).toHaveCount(1);
-  await expect(liveFilter).toHaveValue("starlight");
-  await expect(liveEntries).toHaveCount(29);
-  await expect(live.getByRole("button", { name: "A–Z", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await liveFilter.fill("");
   await expect(liveEntries).toHaveCount(29);
   await live.close();
-  await expect(history.locator(`option[value="${added.id}"]`)).toHaveCount(1);
   await expect(entries).toHaveCount(28);
-  await expect(index.getByRole("link", { name: /Zenith guide/ })).toHaveCount(0);
   await page.reload();
   await expect(entries).toHaveCount(28);
   await history.selectOption("live");
   await expect(entries).toHaveCount(29);
-  await expect(index.getByRole("link", { name: /Zenith guide/ })).toBeVisible();
-  await index.getByRole("link", { name: /Zenith guide/ }).click();
+  await page.locator(".directory-entries").getByRole("link", { name: /Zenith guide/ }).click();
   await expect(page.getByRole("heading", { name: "Zenith guide", exact: true })).toBeVisible();
   await page.goto(historicURL);
   await expect(entries).toHaveCount(28);
-  const historicalGuide = onboarding.getByRole("link", { name: /Open onboarding/ });
-  expect(await historicalGuide.getAttribute("href")).toContain("publication=");
-  await historicalGuide.click();
+  await page.locator(".directory-entries").getByRole("link", { name: /Colleague onboarding/ }).click();
   await expect(page.getByRole("heading", { name: "Colleague onboarding", exact: true })).toBeVisible();
   await expect(history).not.toHaveValue("live");
 });
@@ -645,7 +644,7 @@ test("protected image previews support evidence links, enlargement, retry and se
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`/#/passages/${records.passage}`);
   await expect(preview).toBeVisible();
-  await expect(page.locator("blockquote.passage")).toContainText("synthetic blue image");
+  await expect(page.locator(".evidence-excerpt")).toContainText("synthetic blue image");
   await page.goto("/#/page/image-evidence");
   await page.getByRole("button", { name: "Citation 1", exact: true }).click();
   await expect(preview).toBeVisible();
@@ -659,6 +658,7 @@ test("protected image previews support evidence links, enlargement, retry and se
   await expect(enlarge).toBeFocused();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.setViewportSize({ width: 1100, height: 900 });
   // Closed enlargement controls must not enter the citation focus trap when
   // the original-download token request failed independently of preview retry.
   await page.route("**/api/files/token", route => route.fulfill({ status: 503,
@@ -676,6 +676,7 @@ test("protected image previews support evidence links, enlargement, retry and se
   await page.keyboard.press("Tab");
   await expect(closeEvidence).toBeFocused();
   await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto(`/#/sources/${records.unsupported}`);
   await expect(page.getByText("Preview is unavailable for this image format. Download the original to view it.", { exact: true })).toBeVisible();
   await expect(page.locator("img")).toHaveCount(0);
@@ -774,7 +775,7 @@ test("property evidence, catalog filters, pagination, historical links and mobil
   const evidence = panel.getByRole("button", { name: "Evidence for Provider observed at: citation 1" });
   await evidence.focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("dialog")).toContainText("Observatory source");
+  await expect(page.locator(".evidence-panel")).toContainText("Observatory source");
   await page.keyboard.press("Escape");
   await expect(evidence).toBeFocused();
   await panel.getByText(/All properties/).click();
@@ -794,7 +795,7 @@ test("property evidence, catalog filters, pagination, historical links and mobil
   await page.locator(".catalog-cards").getByRole("link", { name: "Catalog bucket 00" }).click();
   await expect(panel).toBeVisible();
   await page.goto("/#/catalog/resource?publication=" + publication.id);
-  await page.getByLabel("Publication", { exact: true }).selectOption({ label: "Publication 1" });
+  await page.getByLabel("Publication", { exact: true }).selectOption((await page.getByLabel("Publication", { exact: true }).locator("option").filter({ hasText: /Publication 1$/ }).getAttribute("value"))!);
   await expect(page.locator(".catalog-page").getByRole("status")).toHaveText("0 pages");
   await expect(page.getByRole("heading", { name: "Resources", exact: true })).toBeVisible();
 });

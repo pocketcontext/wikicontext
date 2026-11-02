@@ -37,8 +37,9 @@ volumes are preserved and the replacement is health-checked. It does not
 automatically roll back.
 
 Workflow health checks prove HTTP/database availability, not the exact deployed
-source revision, data equivalence, or backup durability. The handler
-resolves `latest` when it runs; the commandless SSH contract does not carry the
+source revision, data equivalence, or backup durability. Production currently uses a reviewed digest pin in both the scaffold and host delivery
+request; publishing a new `latest` does not advance that pin. The handler
+resolves the configured image when it runs; the commandless SSH contract does not carry the
 workflow's digest. Record independent runtime revision evidence when releasing.
 Host-local locks are not distributed fencing, and Litestream remains asynchronous.
 

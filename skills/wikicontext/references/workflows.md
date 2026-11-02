@@ -269,6 +269,48 @@ latest revision timestamp. Catalog filters search structured values separately
 from full-text title/summary/body search. Export generates Obsidian properties
 and relationship links; edit via new WikiContext revisions, not the generated vault.
 
+## Reader navigation adoption
+
+Overview, All pages and custom catalogs follow the selected immutable publication.
+Keep reading through authenticated SQL and writing ordinary staging revisions;
+never modify historical revisions, manifests or generated Markdown in place.
+Existing publications without valid topic metadata retain labelled, inferred
+navigation. The first valid `topics` list (including `[]`) or topic definition in
+a selected publication switches its topic grouping to explicit membership. Missing
+membership then means Other knowledge; a title never assigns an explicit topic.
+Custom catalog metadata alone does not switch topic grouping.
+
+1. Read the selected space's latest manifest, page properties, citations and links.
+   Review existing inferred groups and any conflicting historical uses of these
+   property names. Agree the desired organization within the user's requested
+   scope; deploying reader support does not itself authorize editing knowledge.
+2. Stage new revisions with reviewed `topics: ["engineering"]` and optional
+   `catalogs: ["developer-tools"]`. Use `topics: []` for deliberately unassigned
+   pages. Preserve still-valid prose, properties, property evidence, citations and
+   `page_links` explicitly: revisions do not merge omitted fields. Set each
+   `base_revision` from the pinned manifest.
+3. Optionally stage definition pages with matching stable slugs, e.g. a concept
+   `engineering` with `navigation_kind: "topic"`, or `developer-tools` with
+   `navigation_kind: "catalog"`, `catalog_columns: ["title", "provider"]` and
+   `catalog_sort: "provider"`. Their title/summary supply labels; definitions
+   follow normal citation or `[needs verification]` rules. Navigation keys do not
+   require page links, but factual relationship properties still do.
+4. Set `onboarding_order: 1`, `2`, etc. on reviewed guides if Overview should list
+   them under Getting started. Publish the reviewed run atomically using a fresh
+   run revision. A conflict requires rereading and a new staging run, not a blind
+   retry or replacement of expected bases.
+5. Verify the new publication's Overview, All pages, custom catalogs and historical
+   links. Verify an earlier publication still retains its original membership,
+   labels and inferred behavior. Removing a definition leaves referenced keys
+   browsable under a readable key label; removing all topic metadata restores
+   that selected publication's compatibility behavior. Archive pages only through
+   normal reviewed revisions, preserving existing relationship/home checks.
+
+The reader filters custom catalogs over the complete selected publication, with
+fifty-row display pagination. Metadata search is distinct from ranked page-body
+search. A navigation definition is content, never an executable query or access
+policy. Existing Audio, Incidents and other built-in catalogs remain independent.
+
 ## Repository files
 
 WikiContext is authoritative; GitHub copies are explicit distribution destinations.
