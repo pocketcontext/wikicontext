@@ -18,9 +18,10 @@ make build
 ```
 
 The pinned build includes `sqlite_math_functions,sqlite_percentile,sqlite_fts5`.
-Filtered SQL uses private per-user SQLite files, refreshed asynchronously after
-writes. Available reads use the last complete copy while its replacement builds;
-SQL membership revocation therefore takes effect when the next copy completes.
+Filtered SQL uses private per-user SQLite files, refreshed asynchronously when
+a tracked table changes. The server retires idle copies after 15 minutes.
+Available SQL and search reads reflect a membership revocation when the
+replacement copy completes.
 Authentication is checked on every request. The Python client requests `fresh`
 SQL and search reads, preserving write verification and ingestion resumption. The
 reader uses available copies, polls refresh status and requests fresh membership

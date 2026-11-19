@@ -9,6 +9,19 @@ generation while a replacement builds. This includes eventual membership
 revocation for SQL and search. Account authentication, REST, realtime and protected
 files continue to enforce their independent current authorization.
 
+WikiContext enables `snapshot.trackChanges`. The server checks transactional
+change tokens for the exported tables, their filter inputs and the `users`
+collection. Commits confined to other tables leave a completed generation in
+place. Changes to a tracked table refresh each cached requester, even when the
+changed row belongs to another space. Each refresh builds a complete SQL copy
+and its current-publication search indexes.
+
+The first startup with tracking enabled requires a writable database to install
+and seed the version table and its triggers. Later frozen restarts verify the
+installed definitions. Rolling back the application image also restores its
+previous configuration. The installed triggers continue to update their tokens
+when that image writes.
+
 ## Consistency
 
 `POST /api/context/query` and `/api/context/search` accept `consistency: available`
@@ -30,6 +43,13 @@ equivalent `X-Context-Snapshot-*` headers. `GET /api/context/snapshot` reports o
 the authenticated requester's status and schedules a dirty refresh without waiting.
 Before the first completed copy, the generation is absent.
 
+Operators can read process-wide counters at `GET /api/context/snapshot/metrics`
+with superuser authentication. `unrelatedChanges` counts observations that
+skipped a refresh. One observation can cover several commits.
+`generationBytes` sums logical SQL and warmed search file sizes at publication.
+Compare these counters with process write-byte deltas over the same uptime
+interval to measure background work and disk I/O.
+
 The Python client requests fresh SQL/search reads centrally, including ingestion
 deduplication, recovery after a lost write response, export and publication
 verification. Its transport timeout is 130 seconds. The browser uses available
@@ -49,10 +69,12 @@ require enough disk and time; refresh can temporarily retain old and new files.
 Latest-publication FTS files belong to the copy, with historical scopes built
 on demand. SQL and FTS files share the overall 1 GiB disk budget; legacy
 `search.maxIndexBytes` and `search.cacheBytes` apply only in synchronous mode.
-Disk growth is serialized; competing builds wait for a reservation. Cached users
-are evicted by the 16-requester bound, not by disk pressure. Source databases/WAL
-and SQLite temporary working files require additional host capacity. Cached
-generations are temporary and are rebuilt after restart or requester eviction.
+Disk growth is serialized and competing builds wait for a reservation. The
+server retires idle requesters after 15 minutes and evicts requesters at the
+16-requester cache limit. In-flight reads retain their generation until their
+leases close. A subsequent read after eviction or restart builds a new copy.
+Source databases/WAL and SQLite temporary working files require additional
+host capacity.
 
 The legacy `snapshot.maxRows`/`maxBytes` settings remain for separate filtered-read
 budgets and synchronous fallback. They do not limit an asynchronous full SQL copy.
@@ -67,3 +89,6 @@ minimum token after restart and retry once under the same authentication.
 `result_limit` is HTTP 413 for final response size, where paging or narrower output
 can help. Failed refreshes retain the last completed copy and expose status;
 fresh operations fail rather than treating older data as current.
+If the server cannot validate source tracking, status reports
+`source_check_failed` and new SQL and search reads fail, including available
+reads. A source schema change requires a restart to revalidate tracking.

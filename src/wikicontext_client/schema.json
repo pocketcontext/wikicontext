@@ -7,6 +7,7 @@
       "buildTimeoutMs": 120000,
       "maxBuilders": 1,
       "maxCachedUsers": 16,
+      "idleTimeoutMs": 900000,
       "refreshIntervalMs": 1000,
       "retryDelayMs": 1000,
       "maxValueBytes": 16777216

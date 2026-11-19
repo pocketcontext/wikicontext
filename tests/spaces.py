@@ -5,6 +5,7 @@ import json
 import queue
 import secrets
 import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -310,13 +311,33 @@ def main():
         publish(c, stale_right, 409)
         assert manifest(a, g)[0] == 2 and manifest(a, pa)[0] == 2
 
-        # Deactivation takes effect on the next request, including realtime and files.
+        # Warm both the current publication and the on-demand historical search
+        # index for the member whose access is about to change.
+        if SEARCH:
+            publications = rows(c, f"SELECT id FROM publications WHERE space = '{g}' ORDER BY sequence")
+            assert len(publications) == 2
+            scoped_searches = [
+                {'index': 'pages', 'scope': pub['id'], 'query': 'Synthetic'}
+                for pub in publications
+            ]
+            for search in scoped_searches:
+                assert request('POST', '/api/context/search', search, c, default_fresh=False)['hits']
+
         c_file = request('POST', '/api/files/token', {}, c)['token']
         g_file = '/api/files/sources/' + g_source['id'] + '/' + g_source['original'] + '?token='
         with urllib.request.urlopen(request.base_url + g_file + c_file, timeout=20) as response:
             assert response.status == 200
         request('PATCH', records('space_members', carol_membership['id']), {'expected_revision': 1, 'active': False}, admin)
-        assert rows(c, f"SELECT count(*) AS n FROM pages WHERE space = '{g}'") == [{'n': 0}]
+        available = {'sql': f"SELECT id FROM pages WHERE space = '{g}'"}
+        deadline = time.monotonic() + 20
+        while request('POST', '/api/context/query', available, c, default_fresh=False)['rows']:
+            assert time.monotonic() < deadline, 'Background refresh retained revoked group pages'
+            time.sleep(.1)
+        if SEARCH:
+            absent = request('POST', '/api/context/search', {**scoped_searches[0], 'scope': 'missing00000000'},
+                             c, 404, default_fresh=False)
+            for search in scoped_searches:
+                assert request('POST', '/api/context/search', search, c, 404, default_fresh=False) == absent
         request('GET', records('pages', g_page['id']), token=c, expected=404)
         request('GET', g_file + c_file, expected=404)
         create(c, 'pages', {'space': g, 'slug': 'after-revocation', 'kind': 'concept'}, expected=404)

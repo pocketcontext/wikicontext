@@ -13,12 +13,17 @@ def main():
         request('GET', '/api/context/snapshot', expected=(401, 403))
         space = request('POST', '/api/wiki/spaces/personal', {}, token)['id']
         sql = "SELECT count(*) AS n FROM pages WHERE space='" + space + "'"
-        first = request('POST', '/api/context/query', {'sql': sql}, token)
+        first = request('POST', '/api/context/query', {'sql': sql}, token, default_fresh=False)
         assert first['rows'] == [[0]] and not first['truncated']
         old = first['snapshot']['generation']
         assert old and first['snapshot']['rows'] > 0 and first['snapshot']['diskBytes'] > 0
         status = request('GET', '/api/context/snapshot', token=token)
         assert status['generation'] == old
+        # A settings write commits to the same source database without changing
+        # the requester's export or its membership and account dependencies.
+        request('PATCH', '/api/settings', {'meta': {'appName': 'Synthetic snapshot test'}}, admin)
+        unchanged = request('POST', '/api/context/query', {'sql': sql, 'consistency': 'fresh'}, token)
+        assert unchanged['snapshot']['generation'] == old
         request('POST', '/api/collections/pages/records', {'space': space, 'slug': 'new-evidence', 'kind': 'concept'}, token)
         # Either complete generation is legal during refresh; no partial copy is.
         available = request('POST', '/api/context/query', {'sql': sql, 'consistency': 'available', 'atLeast': old}, token)
@@ -38,6 +43,9 @@ def main():
         request('PATCH', '/api/collections/users/records/' + user['id'], {'disabled': True}, admin)
         request('GET', '/api/context/snapshot', token=token, expected=(401, 403))
         request('POST', '/api/context/query', {'sql': sql, 'consistency': 'available'}, token, (401, 403))
+        request('POST', '/api/context/search', {
+            'index': 'pages', 'scope': 'missing00000000', 'query': 'synthetic', 'consistency': 'available',
+        }, token, (401, 403))
     print('PASS: available complete copies, fresh write barrier, requester-bound generations, exact conflict and disabled-account denial')
 
 
