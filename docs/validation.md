@@ -96,3 +96,8 @@ within 120 seconds, `whoami` without assertion or token persistence, and unchang
 Google renewal. Every README backend/client command, including `skill.py --trace`,
 passed against the clean pinned server with synthetic isolated databases. Reader,
 browser and container gates were not run locally; the reader is unchanged.
+
+The portable launcher was pinned to published client source
+`10015c67f172cf27312d67c5a21c9feab38dbd37`. The copied-launcher skill suite and
+`tests/launcher.py` passed from an unrelated temporary directory against the exact
+pinned server.
