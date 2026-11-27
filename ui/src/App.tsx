@@ -170,47 +170,50 @@ function Reader() {
       /* Storage is optional. */
     }
   }, [theme]);
-  useEffect(() => {
-    const handler = () => {
-      const next = route();
-      const previous = routeSelection.current;
-      personalCreation.current++;
-      setCreatingSpace(false);
-      if (
-        next.slug !== previous.slug ||
-        next.welcome !== previous.welcome ||
-        next.directory !== previous.directory ||
-        next.catalog !== previous.catalog ||
-        next.publication !== previous.publication ||
-        next.space !== previous.space ||
-        next.collection !== previous.collection ||
-        next.record !== previous.record
-      ) {
-        generation.current++;
-      }
-      if ((next.space || companySpace) !== (previous.space || companySpace)) {
-        setSnapshot(null);
-        setPublications([]);
-        setSpace(null);
-        setEmptySpace(false);
-        setOriginal("");
-        lastPublication.current = undefined;
-      }
-      routeSelection.current = next;
-      setCurrent(next);
-      if (
-        next.collection !== previous.collection ||
-        next.record !== previous.record
-      )
-        setEvidenceTitle("");
-      setSearch(next.query);
-      setEvidence(null);
-      drawerDestination.current = true;
-      setMenu(false);
-    };
-    window.addEventListener("hashchange", handler);
-    return () => window.removeEventListener("hashchange", handler);
+  // Apply the URL route. Hash navigation reaches this through hashchange;
+  // in-reader controls call it synchronously after pushState so controlled
+  // inputs and later actions never observe a route older than the URL.
+  const followRoute = useCallback(() => {
+    const next = route();
+    const previous = routeSelection.current;
+    personalCreation.current++;
+    setCreatingSpace(false);
+    if (
+      next.slug !== previous.slug ||
+      next.welcome !== previous.welcome ||
+      next.directory !== previous.directory ||
+      next.catalog !== previous.catalog ||
+      next.publication !== previous.publication ||
+      next.space !== previous.space ||
+      next.collection !== previous.collection ||
+      next.record !== previous.record
+    ) {
+      generation.current++;
+    }
+    if ((next.space || companySpace) !== (previous.space || companySpace)) {
+      setSnapshot(null);
+      setPublications([]);
+      setSpace(null);
+      setEmptySpace(false);
+      setOriginal("");
+      lastPublication.current = undefined;
+    }
+    routeSelection.current = next;
+    setCurrent(next);
+    if (
+      next.collection !== previous.collection ||
+      next.record !== previous.record
+    )
+      setEvidenceTitle("");
+    setSearch(next.query);
+    setEvidence(null);
+    drawerDestination.current = true;
+    setMenu(false);
   }, []);
+  useEffect(() => {
+    window.addEventListener("hashchange", followRoute);
+    return () => window.removeEventListener("hashchange", followRoute);
+  }, [followRoute]);
   useEffect(
     () =>
       pb.authStore.onChange(() => {
@@ -739,6 +742,9 @@ function Reader() {
     });
   };
   const navigatePublication = (id: string) => {
+    // Derive the destination from the URL, which hash navigation updates
+    // synchronously, rather than from a render that may not have caught up.
+    const current = route();
     const destination = current.directory
       ? pagesHref(
           {
@@ -841,12 +847,22 @@ function Reader() {
       selection.publication === current.publication);
   // Evidence views own expiring file tokens and navigation-scoped actions.
   // Preserve their immediate unmount/reset behavior when leaving a record.
+  // Directory filters, topic, grouping and sort are presentation of the
+  // retained pages, so they follow the current URL while a publication loads.
   const view =
     selection &&
     !sameView &&
     selection.collection === "pages" &&
     current.collection === "pages"
-      ? selection
+      ? selection.directory && current.directory
+        ? {
+            ...selection,
+            topic: current.topic,
+            view: current.view,
+            filter: current.filter,
+            sort: current.sort,
+          }
+        : selection
       : current;
   const displayedPinned = view.publication
     ? snapshot?.publication.id || view.publication
@@ -1409,7 +1425,8 @@ function Reader() {
                   sort: view.sort,
                 }}
                 onNavigate={(href) => {
-                  location.hash = href;
+                  history.pushState(null, "", href);
+                  followRoute();
                 }}
               />
             )}

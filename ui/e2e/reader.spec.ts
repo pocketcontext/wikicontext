@@ -549,12 +549,45 @@ test("overview and complete directory preserve search, topics, history and live 
   await expect(localFilter).toHaveValue("starlight");
   await expect(entries).toHaveCount(25);
   await localFilter.fill("");
+  // Clearing applies synchronously: the input never reverts to the old filter.
+  await expect(localFilter).toHaveValue("");
+  await expect(entries).toHaveCount(28);
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
   await page.setViewportSize({ width: 1280, height: 900 });
   const history = page.getByLabel("Publication", { exact: true });
-  await history.selectOption((await history.locator("option").filter({ hasText: /Publication 1$/ }).getAttribute("value"))!);
+  const firstPublication = (await history.locator("option").filter({ hasText: /Publication 1$/ }).getAttribute("value"))!;
+  // Hold the historical directory read: the retained live pages must keep the
+  // cleared filter while the selected publication loads.
+  let releaseDirectory!: () => void;
+  const directoryGate = new Promise<void>(resolve => { releaseDirectory = resolve; });
+  let directoryHeld = false;
+  await page.route("**/api/context/query", async route => {
+    const sql = route.request().postDataJSON().sql as string;
+    if (!directoryHeld && sql.includes("AS publishedAt") && sql.includes(firstPublication)) {
+      directoryHeld = true;
+      const response = await route.fetch();
+      await directoryGate;
+      await route.fulfill({ response });
+    } else await route.continue();
+  });
+  try {
+    await localFilter.fill("starlight");
+    await localFilter.fill("");
+    await history.selectOption(firstPublication);
+    // Run alone, the first publication is also the cached live one.
+    const pending = firstPublication !== await history.locator("option").nth(1).getAttribute("value");
+    if (pending) await expect.poll(() => directoryHeld).toBe(true);
+    await expect(page).toHaveURL(new RegExp(`#/pages\\?publication=${firstPublication}&sort=title$`));
+    await expect(localFilter).toHaveValue("");
+    await expect(entries).toHaveCount(28);
+    if (pending) await expect(entries.first().locator("a")).not.toHaveAttribute("href", /publication=/);
+  } finally {
+    releaseDirectory();
+    await page.unrouteAll({ behavior: "wait" });
+  }
   const historicURL = page.url();
+  await expect(entries.first().locator("a")).toHaveAttribute("href", new RegExp(`publication=${firstPublication}$`));
   await expect(entries).toHaveCount(28);
   const live = await context.newPage();
   await live.goto("/#/pages");
