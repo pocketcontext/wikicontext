@@ -277,6 +277,16 @@ def oauth_refresh_needed(session):
         return True
 
 
+def identity_renewal_needed(session):
+    """Request a new assertion only near expiry; identity tokens cannot be extended by auth-refresh."""
+    try:
+        payload = session['token'].split('.')[1]
+        claims = json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4)))
+        return claims['exp'] <= time.time() + 120
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError):
+        return True
+
+
 def google_login(cfg, port=8765, timeout=180, open_browser=True):
     if not 1 <= port <= 65535 or not 1 <= timeout <= 600:
         raise Fail(2, 'OAuth port must be 1–65535 and timeout must be 1–600 seconds')
@@ -393,7 +403,8 @@ def call(cfg, method, path, body=None, *, timeout=None):
     cached = session is not None
     if not cached:
         session = login(cfg) if cfg.get('password') else identity_login(cfg)
-    if session.get('method') == 'identity' and (oauth_refresh_needed(session) or path == '/api/collections/users/auth-refresh'):
+    if session.get('method') == 'identity' and identity_renewal_needed(session):
+        # auth-refresh (whoami) uses a fresh token as is; the server returns it unextended and it is not saved.
         session = identity_login(cfg)
     if session.get('method') == 'google' and (oauth_refresh_needed(session) or path == '/api/collections/users/auth-refresh'):
         # Renew at most every five minutes, or near expiry, to respect auth rate limits.

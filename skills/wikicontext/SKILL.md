@@ -29,7 +29,9 @@ Shared identity credentials live in `$XDG_STATE_HOME/pocketcontext-id/` (default
 expire after seven idle days or thirty days absolute. App URL/email defaults and
 app tokens remain under the existing `wikicontext` state directory. App tokens last
 at most fifteen minutes and cannot be extended by PocketBase auth-refresh; the
-client requests a new signed assertion from IdentityContext instead. Renewal
+client requests a new signed assertion from IdentityContext instead, only when
+the saved token expires within two minutes or cannot be read; `whoami` uses a
+fresh token as is. Renewal
 never opens a browser during ordinary commands and never falls back automatically.
 Identity assertions are single-use, valid for sixty seconds, and bound to this
 application's exact configured audience. Account disable and existing application

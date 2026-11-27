@@ -77,3 +77,22 @@ production build and all 31 isolated Chromium scenarios passed with synthetic
 isolated data. One Chromium run first failed a scroll-restoration timing assertion
 on this shared 2-CPU host and passed unchanged on rerun. Local runs used Node.js 26
 with pnpm 10.33.2. Container gates were not run locally (no Docker).
+
+## Hosted identity renewal near expiry — 27 November 2026
+
+The client now requests a new IdentityContext assertion for hosted-identity
+sessions only when the saved token's `exp` is within 120 seconds or its claims
+cannot be read; the former five-minute age trigger no longer applies to them.
+`whoami` and `spaces` send a fresh identity token through the ordinary request
+path instead of forcing an assertion, and the auth-refresh response is not saved.
+Pinned server `d4257d020171dc51ff5d6802f6914c51658fcb64` (identity code unchanged
+since `5f1b8f5`) returns identity tokens from auth-refresh unchanged, so the
+fifteen-minute bound still holds. Direct Google
+renewal and identity rejection handling are unchanged. No schema, server pin or
+API change is involved.
+
+New `tests/identity_client.py` cases cover a fresh token with no assertion, renewal
+within 120 seconds, `whoami` without assertion or token persistence, and unchanged
+Google renewal. Every README backend/client command, including `skill.py --trace`,
+passed against the clean pinned server with synthetic isolated databases. Reader,
+browser and container gates were not run locally; the reader is unchanged.

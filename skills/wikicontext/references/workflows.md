@@ -13,7 +13,8 @@ Use `wikicontext login` for hosted IdentityContext sign-in. Over SSH, open the p
 HTTPS URL on your browser computer and paste its single-use code into the original
 terminal; no tunnel is needed. A valid shared identity session is reused. Never
 automate Google sign-in or paste tokens into chat. App tokens expire within fifteen
-minutes and renew through IdentityContext. A failed renewal does not trigger fallback.
+minutes and renew through IdentityContext only within two minutes of expiry. A failed
+renewal does not trigger fallback.
 Use `wikicontext login --google` only when explicitly choosing the direct-app fallback
 below. App logout clears the app token; `identitycontext logout --email EMAIL`
 revokes shared identity sign-in after installing the separate command as described
